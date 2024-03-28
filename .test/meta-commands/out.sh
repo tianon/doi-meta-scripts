@@ -4,7 +4,7 @@
 # </pull>
 # <build>
 docker buildx build --progress=plain \
-	--provenance=mode=max,builder-id='https://github.com/docker-library' \
+	--provenance=mode=max,builder-id='https://tianon.xyz' \
 	--output '"type=oci","dest=temp.tar"' \
 	--annotation 'manifest,manifest-descriptor:org.opencontainers.image.source=https://github.com/docker-library/docker.git#6d541d27b5dd12639e5a33a675ebca04d3837d74:24/cli' \
 	--annotation 'manifest,manifest-descriptor:org.opencontainers.image.revision=6d541d27b5dd12639e5a33a675ebca04d3837d74' \
@@ -89,10 +89,6 @@ docker push 'oisupport/staging-windows-amd64:9b405cfa5b88ba65121aabdb95ae90fd2e1
 # <build>
 build='{"buildId":"191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f","build":{"img":"oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f","resolved":{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:4be429a5fbb2e71ae7958bfa558bc637cf3a61baf40a708cb8fff532b39e52d0","size":610,"annotations":{"com.docker.official-images.bashbrew.arch":"amd64","org.opencontainers.image.base.name":"scratch","org.opencontainers.image.created":"2024-02-28T00:44:18Z","org.opencontainers.image.ref.name":"oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f@sha256:4be429a5fbb2e71ae7958bfa558bc637cf3a61baf40a708cb8fff532b39e52d0","org.opencontainers.image.revision":"d0b7d566eb4f1fa9933984e6fc04ab11f08f4592","org.opencontainers.image.source":"https://github.com/docker-library/busybox.git","org.opencontainers.image.url":"https://hub.docker.com/_/busybox","org.opencontainers.image.version":"1.36.1-glibc"},"platform":{"architecture":"amd64","os":"linux"}}],"annotations":{"org.opencontainers.image.ref.name":"oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f@sha256:70a227928672dffb7d24880bad1a705b527fab650f7503c191e48a209c4a0d10"}},"sourceId":"df39fa95e66c7e19e56af0f9dfb8b79b15a0422a9b44eb0f16274d3f1f8939a2","arch":"amd64","parents":{},"resolvedParents":{}},"source":{"sourceId":"df39fa95e66c7e19e56af0f9dfb8b79b15a0422a9b44eb0f16274d3f1f8939a2","reproducibleGitChecksum":"17e76ce3a5b47357c5724738db231ed2477c94d43df69ce34ae0871c99f7de78","entries":[{"GitRepo":"https://github.com/docker-library/busybox.git","GitFetch":"refs/heads/dist-amd64","GitCommit":"d0b7d566eb4f1fa9933984e6fc04ab11f08f4592","Directory":"latest/glibc/amd64","File":"index.json","Builder":"oci-import","SOURCE_DATE_EPOCH":1709081058}],"arches":{"amd64":{"tags":["busybox:1.36.1","busybox:1.36","busybox:1","busybox:stable","busybox:latest","busybox:1.36.1-glibc","busybox:1.36-glibc","busybox:1-glibc","busybox:stable-glibc","busybox:glibc"],"archTags":["amd64/busybox:1.36.1","amd64/busybox:1.36","amd64/busybox:1","amd64/busybox:stable","amd64/busybox:latest","amd64/busybox:1.36.1-glibc","amd64/busybox:1.36-glibc","amd64/busybox:1-glibc","amd64/busybox:stable-glibc","amd64/busybox:glibc"],"froms":["scratch"],"lastStageFrom":"scratch","platformString":"linux/amd64","platform":{"architecture":"amd64","os":"linux"},"parents":{"scratch":{"sourceId":null,"pin":null}}}}}}'
 "$BASHBREW_META_SCRIPTS/helpers/oci-import.sh" <<<"$build" temp
-# SBOM
-mv temp temp.orig
-"$BASHBREW_META_SCRIPTS/helpers/oci-sbom.sh" <<<"$build" temp.orig temp
-rm -rf temp.orig
 # </build>
 # <push>
 crane push temp 'oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f'
