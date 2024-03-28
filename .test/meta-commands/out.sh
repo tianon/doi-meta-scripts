@@ -5,7 +5,7 @@
 # <build>
 SOURCE_DATE_EPOCH=1700741054 \
 	docker buildx build --progress=plain \
-	--provenance=mode=max,builder-id='https://github.com/docker-library' \
+	--provenance=mode=max,builder-id='https://tianon.xyz' \
 	--output '"type=oci","dest=temp.tar"' \
 	--annotation 'org.opencontainers.image.source=https://github.com/docker-library/docker.git#6d541d27b5dd12639e5a33a675ebca04d3837d74:24/cli' \
 	--annotation 'org.opencontainers.image.revision=6d541d27b5dd12639e5a33a675ebca04d3837d74' \
@@ -136,42 +136,6 @@ jq -s '
 		| .annotations = {"org.opencontainers.image.source":"https://github.com/docker-library/busybox.git","org.opencontainers.image.revision":"d0b7d566eb4f1fa9933984e6fc04ab11f08f4592","org.opencontainers.image.created":"2024-02-28T00:44:18Z","org.opencontainers.image.version":"1.36.1","org.opencontainers.image.url":"https://hub.docker.com/_/busybox","com.docker.official-images.bashbrew.arch":"amd64","org.opencontainers.image.base.name":"scratch"}
 	)
 ' temp/index.json > temp/index.json.new
-mv temp/index.json.new temp/index.json
-# SBOM
-originalImageManifest="$(jq -r '.manifests[0].digest' temp/index.json)"
-SOURCE_DATE_EPOCH=1709081058 \
-	docker buildx build --progress=plain \
-	--load=false \
-	--provenance=false \
-	--build-arg BUILDKIT_DOCKERFILE_CHECK=skip=all \
-	--sbom=generator="$BASHBREW_BUILDKIT_SBOM_GENERATOR" \
-	--output 'type=oci,tar=false,dest=sbom' \
-	--platform 'linux/amd64' \
-	--build-context "fake=oci-layout://$PWD/temp@$originalImageManifest" \
-	- <<<'FROM fake'
-sbomIndex="$(jq -r '.manifests[0].digest' sbom/index.json)"
-shell="$(jq -r --arg originalImageManifest "$originalImageManifest" '
-	first(
-		.manifests[]
-		| select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")
-	) as $attDesc
-	| @sh "sbomManifest=\($attDesc.digest)",
-		@sh "sbomManifestDesc=\(
-			$attDesc
-			| .annotations["vnd.docker.reference.digest"] = $originalImageManifest
-			| tojson
-		)"
-' "sbom/blobs/${sbomIndex/://}")"
-eval "$shell"
-shell="$(jq -r '
-	"copyBlobs=( \([ .config.digest, .layers[].digest | @sh ] | join(" ")) )"
-' "sbom/blobs/${sbomManifest/://}")"
-eval "$shell"
-copyBlobs+=( "$sbomManifest" )
-for blob in "${copyBlobs[@]}"; do
-	cp "sbom/blobs/${blob/://}" "temp/blobs/${blob/://}"
-done
-jq -r --argjson sbomManifestDesc "$sbomManifestDesc" '.manifests += [ $sbomManifestDesc ]' temp/index.json > temp/index.json.new
 mv temp/index.json.new temp/index.json
 # </build>
 # <push>

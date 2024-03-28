@@ -1,5 +1,6 @@
 # "build_should_sbom", etc.
-include "doi";
+#include "doi";
+include "tianon";
 
 # input: "build" object (with "buildId" top level key)
 # output: boolean
