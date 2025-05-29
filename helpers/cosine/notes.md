@@ -19,6 +19,10 @@ meta will *also* look up whether every image has a "production signature" yet, a
 
 we add a *new* process that looks at images with a valid build but missing a production signature that then signs them?  OR we just have the "meta" job be responsible for creating production signatures, which would mean we could sign the JSON with the prod key too (win win, the privileged JSON metadata and the prod images are signed with the same key, no separate process, etc) AND that we'd need "meta" to run on a dedicated / higher-privilege worker, which is also a good idea anyways
 
+eventually we need to *also* sign the image indexes (both per-arch image index and library/ image index)
+- since we generate the per-arch deterministically, we can technically pre-generate a signature for it (even without storing the generated index, since it's deterministic)
+- library/ is more complicated
+
 all of this reflects our existing security posture/model, but now with cryptographically provable assertions to back up that this is roughly how it's always worked (and the rigor we've always applied)
 
 stretch thoughts?
