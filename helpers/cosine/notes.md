@@ -11,6 +11,9 @@ when "meta/builds" looks up images to embed them in builds.json, it verifies the
 - thus if we ever have to rotate any of those keys, the builds will automatically be considered invalid and rebuilt with the newer keys
 - we should probably consider a "vector" of keys that are considered valid so that we can rotate keys *without* forcing a full rebuild 🤔 (extra useful if the validation records which key specifically was the one that matched)
 - the meta job probably *also* needs some kind of key to sign the JSON with so that we can do a very cheap verification in steps like "deploy" that the generated JSON was generated and validated by meta, especially as we're trusting meta to have front-loaded all the other verification
+- Go notes
+  - https://pkg.go.dev/crypto/x509#ParsePKIXPublicKey for parsing public key files into objects
+  - https://pkg.go.dev/crypto/x509#ParseECPrivateKey for parsing the private key files into objects (likely needs https://pkg.go.dev/encoding/pem#Decode first as seen in https://medium.com/@giorgadzeluka1991/ecdsa-in-go-a-simple-introduction-754955877c6f#:~:text=ParseECPrivateKey)
 
 meta will *also* look up whether every image has a "production signature" yet, and record that information (with validation so that keys can be rotated and regenerate new prod signatures too)
 
