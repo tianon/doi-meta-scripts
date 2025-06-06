@@ -62,7 +62,7 @@ jq <<<"$imageDescriptor" --tab '
 ' | tee cosine-payload.json
 
 # https://github.com/sigstore/cosign/blob/56d51141bdcfddc45609f17c73fd90fc40e965f3/specs/SIGNATURE_SPEC.md#signature-schemes
-# TODO sign the payload (potentially with AWS KMS)
+# TODO sign the payload (potentially with AWS KMS) -- IDEALLY FROM THE SHA256 OF THE PAYLOAD DIRECTLY, NOT FROM THE PAYLOAD ITSELF, SO WE CAN CALCULATE THAT JUST ONCE, WHICH IS THE WHOLE REASON COSIGN DECIDED TO COUPLE DIGEST HASH AND SIGNING HASH
 
 # https://github.com/sigstore/cosign/blob/56d51141bdcfddc45609f17c73fd90fc40e965f3/specs/SIGNATURE_SPEC.md#oci-image-manifest-v1
 # TODO create a new image manifest for the signature (https://oci.dag.dev/?image=tianon/test:cosign) - with "subject" (https://oci.dag.dev/?image=tianon/test:cosign-oci1.1 - https://github.com/sigstore/cosign/issues/3935#issuecomment-2546052439)
