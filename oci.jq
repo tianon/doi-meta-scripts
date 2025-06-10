@@ -133,6 +133,15 @@ def media_type_oci_image: "application/vnd.oci.image.manifest.v1+json";
 def media_type_oci_config: "application/vnd.oci.image.config.v1+json";
 def media_type_oci_layer: "application/vnd.oci.image.layer.v1.tar";
 def media_type_oci_layer_gzip: media_type_oci_layer + "+gzip";
+# https://github.com/opencontainers/image-spec/blob/v1.1.1/manifest.md#guidance-for-an-empty-descriptor
+def oci_empty_descriptor:
+	{
+		mediaType: "application/vnd.oci.empty.v1+json",
+		digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+		size: 2,
+		data: "e30=",
+	}
+;
 
 # https://github.com/distribution/distribution/blob/v3.0.0/docs/content/spec/manifest-v2-2.md#media-types
 def media_type_dockerv2_list: "application/vnd.docker.distribution.manifest.list.v2+json";
@@ -140,6 +149,9 @@ def media_type_dockerv2_image: "application/vnd.docker.distribution.manifest.v2+
 def media_type_dockerv2_config: "application/vnd.docker.container.image.v1+json";
 def media_type_dockerv2_layer: "application/vnd.docker.image.rootfs.diff.tar";
 def media_type_dockerv2_layer_gzip: media_type_dockerv2_layer + ".gzip";
+
+# https://github.com/sigstore/cosign/blob/v2.5.0/internal/pkg/oci/remote/remote.go#L22-L25
+def media_type_cosign_artifact: "application/vnd.dev.cosign.artifact.sig.v1+json";
 
 def media_types_index: media_type_oci_index, media_type_dockerv2_list;
 def media_types_image: media_type_oci_image, media_type_dockerv2_image;
@@ -272,11 +284,15 @@ def validate_oci_index($opt):
 		end
 
 		# https://github.com/moby/buildkit/blob/c6145c2423de48f891862ac02f9b2653864d3c9e/docs/attestations/attestation-storage.md
-		| if .annotations | has("vnd.docker.reference.type") or has("vnd.docker.reference.digest") then
+		| if .annotations | has("vnd.docker.reference.type") then
 			validate_IN(.mediaType; media_type_oci_image)
 			| validate_IN(.artifactType; null, "application/vnd.docker.attestation.manifest.v1+json") # https://github.com/moby/buildkit/pull/5573/files#r2069525281
 			| validate_IN(.annotations["vnd.docker.reference.type"]; "attestation-manifest")
 			| validate(.annotations["vnd.docker.reference.digest"]; validate_oci_digest)
+			| validate_IN(.platform.os; "unknown")
+			| validate_IN(.platform.architecture; "unknown")
+		elif .artifactType == media_type_cosign_artifact then
+			validate_IN(.mediaType; media_type_oci_image)
 			| validate_IN(.platform.os; "unknown")
 			| validate_IN(.platform.architecture; "unknown")
 		else
@@ -302,15 +318,31 @@ def validate_oci_image($opt):
 		| validate_IN(.artifactType;
 			if $opt.imageAttestation then
 				"application/vnd.docker.attestation.manifest.v1+json" # https://github.com/moby/buildkit/pull/5573/files#r2069525281
+			elif $opt.imageCosign then
+				media_type_cosign_artifact
 			else null end # (this check intentionally contradicts the one above so artifactType normally generates an error)
 		)
 	else . end
 	| validate(.config;
 		validate_oci_descriptor
 		| validate(.size; . >= 2; "config must be at *least* big enough for {}")
-		| validate_IN(.mediaType; media_types_config)
+		| validate_IN(.mediaType;
+			if $opt.imageAttestation or $opt.imageCosign then
+				oci_empty_descriptor.mediaType
+			else empty end,
+			media_types_config
+		)
 		| validate_IN(.artifactType; null)
+		| if .mediaType == oci_empty_descriptor.mediaType then
+			# https://github.com/opencontainers/image-spec/blob/v1.1.1/manifest.md#guidance-for-an-empty-descriptor
+			validate_IN(.digest; oci_empty_descriptor.digest)
+			| validate_IN(.size; oci_empty_descriptor.size)
+			| validate_IN(.data; oci_empty_descriptor.data, null)
+		else . end
 	)
+	| if $opt.imageCosign then
+		validate_length(.layers; 1)
+	else . end # TODO should we validate that imageAttestation has to have 1+ layers?  regular images?
 	| validate(.layers[];
 		validate_oci_descriptor
 		| if $opt.imageAttestation then
@@ -321,12 +353,15 @@ def validate_oci_image($opt):
 				"https://spdx.dev/Document",
 				empty # trailing comma
 			)
+		elif $opt.imageCosign then
+			validate_IN(.mediaType; "application/vnd.dev.cosign.simplesigning.v1+json")
+			| validate(.annotations["dev.cosignproject.cosign/signature"]; . and . != ""; "signature manifest must include signature annotation")
 		else
 			validate_IN(.mediaType; media_types_layer)
 		end
 		| validate_IN(.artifactType; null)
 	)
-	| validate_oci_subject_haver
+	| validate_oci_subject_haver # TODO if "vnd.docker.reference.digest" is set on the descriptor for this image, we should *also* validate that "subject" points to the same digest (for now, this is validated in "oci-validate.sh" but it would be interesting to find a clean way to move it inside all this code instead - perhaps passing $desc in $opt directly instead of $opt.imageAttestation and $opt.imageCosign (then that logic lives here instead)?)
 	| validate_oci_annotations_haver
 ;
 def validate_oci_image: validate_oci_image({});
