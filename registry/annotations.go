@@ -12,4 +12,7 @@ const (
 	mediaTypeDockerManifestList  = "application/vnd.docker.distribution.manifest.list.v2+json"
 	mediaTypeDockerImageManifest = "application/vnd.docker.distribution.manifest.v2+json"
 	mediaTypeDockerImageConfig   = "application/vnd.docker.container.image.v1+json"
+
+	// https://github.com/sigstore/cosign/blob/v2.5.0/internal/pkg/oci/remote/remote.go#L22-L25
+	artifactTypeCosignSignature = "application/vnd.dev.cosign.artifact.sig.v1+json"
 )
