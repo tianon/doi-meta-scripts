@@ -171,10 +171,12 @@ def build_should_sbom:
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sign:
-	.build.arch == "amd64" and (
-		.source.arches[.build.arch].tags
-		| map(split(":")[0])
-		| unique
-		| index("notary")
-	)
+	(
+		.build.arch == "amd64" and (
+			.source.arches[.build.arch].tags
+			| map(split(":")[0])
+			| unique
+			| index("notary")
+		)
+	) or (env.SOURCE_DATE_EPOCH//"") == "0" # for the tests
 ;

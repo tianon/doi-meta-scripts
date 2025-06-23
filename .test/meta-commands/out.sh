@@ -43,6 +43,8 @@ jq '
 	)
 ' temp/index.json > temp/index.json.new
 mv temp/index.json.new temp/index.json
+# sign
+"$BASHBREW_META_SCRIPTS/helpers/cosine-sign.sh" temp
 # </build>
 # <push>
 crane push temp 'oisupport/staging-amd64:4b199ac326c74b3058a147e14f553af9e8e1659abc29bd3e82c9c9807b66ee43'
@@ -93,6 +95,8 @@ build='{"buildId":"191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2b
 mv temp temp.orig
 "$BASHBREW_META_SCRIPTS/helpers/oci-sbom.sh" <<<"$build" temp.orig temp
 rm -rf temp.orig
+# sign
+"$BASHBREW_META_SCRIPTS/helpers/cosine-sign.sh" temp
 # </build>
 # <push>
 crane push temp 'oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f'

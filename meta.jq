@@ -213,6 +213,13 @@ def build_command:
 			# - allowing tag as one thing and push as something else, potentially mutually exclusive
 			# - allowing annotations that are set for both "manifest" and "manifest-descriptor" simultaneously
 			# - direct-to-containerd image storage
+
+			if build_should_sign then
+				"# sign",
+				"\"$BASHBREW_META_SCRIPTS/helpers/cosine-sign.sh\" temp",
+				empty
+			else empty end,
+
 			empty
 		] | join("\n")
 	elif $builder == "classic" then
@@ -237,6 +244,9 @@ def build_command:
 				]
 				| join(" \\\n\t")
 			),
+
+			# TODO build_should_sbom ± build_should_sign (both rely on OCI layout, which this doesn't provide, and the former canot easily work on Windows, the latter's Windows-ability is TBD but necessary to figure out)
+
 			empty
 		] | join("\n")
 	elif $builder == "oci-import" then
@@ -250,7 +260,15 @@ def build_command:
 				"\"$BASHBREW_META_SCRIPTS/helpers/oci-sbom.sh\" <<<\"$build\" temp.orig temp",
 				"rm -rf temp.orig",
 				empty
-			else empty end
+			else empty end,
+
+			if build_should_sign then
+				"# sign",
+				"\"$BASHBREW_META_SCRIPTS/helpers/cosine-sign.sh\" temp",
+				empty
+			else empty end,
+
+			empty
 		] | join("\n")
 	else
 		error("unknown/unimplemented Builder: \($builder)")
