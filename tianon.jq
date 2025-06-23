@@ -9,12 +9,12 @@ def buildkit_provenance_builder_id:
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sbom:
-	false
+	any(.source.arches[.build.arch].tags[]; IN("tianon/test:doi-sbom"))
+	# (this could be implemented fully with "IN()" but I want it to stay general so I can make it more advanced/extreme easily without a full refactor)
 ;
 
-# (not currently used by "meta.jq" but included for completeness)
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sign:
-	false
+	any(.source.arches[.build.arch].tags[]; IN("tianon/test:doi-sign"))
 ;

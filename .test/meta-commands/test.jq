@@ -6,6 +6,9 @@ include "meta";
 	empty
 ]
 | map(
+	# <tianon hacks>
+	.source.arches[.build.arch].tags += [ "tianon/test:doi-sbom", "tianon/test:doi-sign" ] |
+	# </tianon hacks>
 	. as $b
 	| commands
 	| to_entries
