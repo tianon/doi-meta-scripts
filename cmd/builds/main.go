@@ -83,6 +83,10 @@ func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocis
 		fmt.Fprintf(os.Stderr, "NOTE: lookup %s -> %s\n", img, strings.TrimPrefix(index.Annotations[ocispec.AnnotationRefName], refString))
 	}
 
+	// TODO if we determine, somehow, that we should be verifying a signature on this blob, this is where we should do so -- if we do decide we should be, and it fails, we should absolutely evict it from the cache and act like it was a 404
+
+	// TODO this might *also* be the appropriate place to generate a "prod" signature for the manifest, once we've verified the "staging" / "arch-specific" signature?  maybe that happens further down, especially since it needs to be recorded in the output JSON somewhere appropriate 🤔
+
 	if !diskCacheForSure {
 		// if we don't know we should cache this lookup for sure, the answer is whether it's a by-digest lookup :)
 		diskCacheForSure = (ref.Digest != "")
