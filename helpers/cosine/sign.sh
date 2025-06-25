@@ -17,6 +17,9 @@ set -Eeuo pipefail
 # sign a digest instead of generating/signing in one (useful because we have to generate a digest for OCI layout, which is the whole reason cosign made the choice to lean on the OCI digest in the first place):
 # sha256sum payload.json | cut -d' ' -f1 | xxd -revert -plain | openssl pkeyutl -sign -inkey cosign.key -pkeyopt digest:sha256 > payload.sig
 
+# $ ~/aws-home/cli.sh kms sign --key-id alias/tianon-testing --message "$(xxd -revert -plain <<<'aec070645fe53ee3b3763059376134f058cc337247c978add178b6ccdfb0019f' | base64 --wrap=0)" --message-type DIGEST --signing-algorithm ECDSA_SHA_256 --query Signature --output text
+# MEQCIELFogJ0wri79+iE1F38E07xLIUigh/8cIpElQAxVHBjAiA6WGfEC7KEVmjiqXtSyaW+GrR6R/FuTyrDpFYO7sEaRw==
+
 # a cute payload proposal (Tianon *really* wants to include the *full* descriptor in here, because it's stupid that it's not included)
 # crane manifest tianon/true:oci | jq '.manifests[0] | { critical: { type: "cosign container image signature", image: { "docker-manifest-digest": .digest }, identity: { "docker-reference": "tianon/true:oci" } }, optional: { creator: "https://github.com/docker-library/meta-scripts", timestamp: (now | floor), descriptor: . } }' --tab
 
