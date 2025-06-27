@@ -247,7 +247,19 @@ func main() {
 
 	go func() {
 		// Go does not have ordered maps *and* is complicated to read an object, make a tiny modification, write it back out (without modelling the entire schema), so we'll let a single invocation of jq solve both problems (munging the documents in the way we expect *and* giving us an in-order stream)
-		jq := exec.Command("jq", "--compact-output", ".[] | (.arches | to_entries[]) as $arch | .arches = { ($arch.key): $arch.value }", sourcesJsonFile)
+		// doing this *also* lets us clean up a bunch of gnarly Go by writing slightly more logic in jq instead
+		jq := exec.Command("jq", "--compact-output", `
+			.[]
+			| (.arches | to_entries[]) as $arch
+			| .arches = { ($arch.key): $arch.value }
+			| {
+				build: {
+					sourceId,
+					arch: $arch.key,
+				},
+				source: .,
+			}
+		`, sourcesJsonFile)
 		jq.Stderr = os.Stderr
 
 		stdout, err := jq.StdoutPipe()
@@ -265,7 +277,7 @@ func main() {
 		for decoder.More() {
 			var build MetaBuild
 
-			if err := decoder.Decode(&build.Source); err == io.EOF {
+			if err := decoder.Decode(&build); err == io.EOF {
 				break
 			} else if err != nil {
 				panic(err)
@@ -274,16 +286,6 @@ func main() {
 			var source MetaSource
 			if err := json.Unmarshal(build.Source, &source); err != nil {
 				panic(err)
-			}
-
-			build.Build.SourceID = source.SourceID
-
-			if len(source.Arches) != 1 {
-				panic("unexpected arches length: " + string(build.Source))
-			}
-			for build.Build.Arch = range source.Arches {
-				// I really hate Go.
-				// (just doing a lookup of the only key in my map into a variable)
 			}
 
 			outChan := make(chan out, 1)
