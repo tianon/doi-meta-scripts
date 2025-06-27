@@ -46,6 +46,11 @@ type MetaBuild struct {
 		ResolvedParents om.OrderedMap[ocispec.Index] `json:"resolvedParents"`
 	} `json:"build"`
 	Source json.RawMessage `json:"source"`
+
+	// this is used below for passing bits of data from jq into Go, and gets zero'd out before we write the final JSON 👀
+	BonusData *struct {
+		ShouldSign bool `json:"shouldSign"`
+	} `json:"DELETE-ME,omitempty"`
 }
 
 var (
@@ -247,8 +252,17 @@ func main() {
 
 	go func() {
 		// Go does not have ordered maps *and* is complicated to read an object, make a tiny modification, write it back out (without modelling the entire schema), so we'll let a single invocation of jq solve both problems (munging the documents in the way we expect *and* giving us an in-order stream)
-		// doing this *also* lets us clean up a bunch of gnarly Go by writing slightly more logic in jq instead
-		jq := exec.Command("jq", "--compact-output", `
+		// doing this *also* lets us source our "system-config" to pull in useful values like whether and how a particular should be signed (so those can be maintained in the single source-of-truth that is our jq), and clean up a bunch of gnarly Go by writing slightly more logic in jq instead
+		metaScripts := os.Getenv("BASHBREW_META_SCRIPTS")
+		if metaScripts == "" {
+			panic("BASHBREW_META_SCRIPTS is not set (or empty) and is required")
+		} else if fi, err := os.Stat(metaScripts); err != nil {
+			panic(err)
+		} else if !fi.Mode().IsDir() {
+			panic("invalid BASHBREW_META_SCRIPTS: '" + metaScripts + "' (not a directory)")
+		}
+		jq := exec.Command("jq", "-L"+metaScripts, "--compact-output", `
+			include "system-config";
 			.[]
 			| (.arches | to_entries[]) as $arch
 			| .arches = { ($arch.key): $arch.value }
@@ -258,6 +272,9 @@ func main() {
 					arch: $arch.key,
 				},
 				source: .,
+			}
+			| .["DELETE-ME"] = {
+				shouldSign: build_should_sign,
 			}
 		`, sourcesJsonFile)
 		jq.Stderr = os.Stderr
@@ -281,6 +298,9 @@ func main() {
 				break
 			} else if err != nil {
 				panic(err)
+			} else if build.BonusData == nil {
+				panic("missing 'bonus' data somehow??")
+				// now we can just assume build.BonusData is valid to deref until we remove it right before we write the data back out 🤌
 			}
 
 			var source MetaSource
@@ -344,6 +364,7 @@ func main() {
 					panic(err)
 				}
 
+				build.BonusData = nil
 				json, err := json.Marshal(&build)
 				if err != nil {
 					panic(err)
