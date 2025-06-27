@@ -1,5 +1,5 @@
 # "build_should_sbom", etc.
-include "doi";
+include "system-config";
 
 # input: "build" object (with "buildId" top level key)
 # output: boolean
