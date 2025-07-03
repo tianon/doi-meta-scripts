@@ -172,11 +172,28 @@ def build_should_sbom:
 # output: boolean
 def build_should_sign:
 	(
-		.build.arch == "amd64" and (
-			.source.arches[.build.arch].tags
-			| map(split(":")[0])
-			| unique
-			| index("notary")
+		.build.arch == "amd64" and any(
+			.source.arches[.build.arch].tags[];
+			startswith("notary:")
 		)
 	) or (env.SOURCE_DATE_EPOCH//"") == "0" # for the tests
+;
+
+# input: "build" object (with "buildId" top level key)
+# output: key-value of (architecture trust-boundary specific) public keys (in PEM format) that should be used to verify the validity of a given build (labelled with a superfluous name for our sake / to be embedded in "builds.json" so it's easier to identify which images are signed by a given key, especially during rotation periods)
+# - might (likely) have extraneous whitespace that should be trimmed/ignored for valid PEM parsing
+# - empty object or empty string means "no signature" should be considered valid
+def build_arch_sign_public_keys:
+	# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
+	if build_should_sign then
+		{
+			"AWS KMS tianon-testing 2025-06-25": "
+				-----BEGIN PUBLIC KEY-----
+				MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaZbdzgQZbl3dLaMpmHCVsOg/xaMs
+				sBHO47lk1EBwuIJEAjza7aODDNANlowj/QINfOGxDhdt25r9XifAB5Oadw==
+				-----END PUBLIC KEY-----
+			",
+			"unsigned": "", # unsigned is ~fine, for now
+		}
+	else {} end
 ;
