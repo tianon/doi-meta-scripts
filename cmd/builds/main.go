@@ -97,16 +97,39 @@ var (
 	cacheFile    string
 )
 
-func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocispec.Index, error) {
+func diskCacheNormalizeRefForCacheKey(img string) (registry.Reference, error) {
 	ref, err := registry.ParseRef(img)
 	if err != nil {
-		return nil, err
+		return ref, err
 	}
 	if ref.Digest != "" {
 		// we use "ref" as a cache key, so if we have an explicit digest, ditch any tag data
 		ref.Tag = ""
 	} else if ref.Tag == "" {
 		ref.Tag = "latest"
+	}
+	return ref, nil
+}
+
+func removeImageFromCache(_ context.Context, img string) error {
+	ref, err := diskCacheNormalizeRefForCacheKey(img)
+	if err != nil {
+		return err
+	}
+
+	saveCacheMutex.Lock()
+	if saveCache != nil {
+		delete(saveCache.Indexes, ref)
+	}
+	saveCacheMutex.Unlock()
+
+	return nil
+}
+
+func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocispec.Index, error) {
+	ref, err := diskCacheNormalizeRefForCacheKey(img)
+	if err != nil {
+		return nil, err
 	}
 	refString := ref.String()
 
@@ -388,6 +411,7 @@ func main() {
 				// if we have any signatures on this build, we need to validate them (and throw out the image / treat it as 404 if the signature is invalid/wrong)
 				signatures, err := registry.CosignSignatures(ctx, build.Build.Resolved)
 				if err != nil {
+					// TODO most errors here probably just mean we should treat it like bad signatures, but not 100%, so we need to sort through that instead of just bailing
 					panic(err)
 				}
 
@@ -434,6 +458,10 @@ func main() {
 					}
 				}
 
+				// explicitly clear out the annotations we'll use to record "signed by" information (so they can't possibly leak in from anywhere and we can rely on "if they're set here, we set them after verification")
+				delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
+				delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
+
 				if !missingSignatures {
 				ArchSignKeysLoop:
 					for _, key := range build.BonusData.ArchSignKeys {
@@ -473,10 +501,12 @@ func main() {
 
 						for _, signature := range signatures {
 							if signature.Digest.Algorithm() != "sha256" {
+								// TODO this should probably just be greated like a "bad" signature (and thus cause the image to be considered invalid)
 								panic("signed payload not sha256: " + signature.Digest)
 							}
 							digest, err := hex.DecodeString(signature.Digest.Encoded())
 							if err != nil {
+								// TODO this should probably just be greated like a "bad" signature (and thus cause the image to be considered invalid)
 								panic("invalid signature digest, somehow: " + err.Error())
 							}
 							// https://github.com/sigstore/sigstore/blob/a9d80542815fe834b51b17c6291feb61864f2ffb/pkg/signature/ecdsa.go#L171
@@ -488,10 +518,10 @@ func main() {
 							// we're only valid if *all* signatures are valid (and signed by the same key), so we have to keep looping
 						}
 
-						// record verification here (TODO explicitly delete these annotations outside this loop)
+						// "we did it, fam" - record which key successfully validated every signature we have (and we verified above that we have signatures for everything we expect to)
 						build.Build.Resolved.Annotations[registry.AnnotationBashbrewSignedByLabel] = key.Label
 						build.Build.Resolved.Annotations[registry.AnnotationBashbrewSignedByPEM] = key.PEM
-						// TODO record at least key.Label somewhere useful here (maybe also key.PEM?)
+
 						validSignatureState = true
 						break ArchSignKeysLoop
 					}
@@ -500,7 +530,10 @@ func main() {
 				if !validSignatureState {
 					// if we have signatures but they aren't valid (or aren't complete), this build is completely dead to us
 					build.Build.Resolved = nil
-					// TODO we also need to clear the "lookup" cache as if this one never was looked up or we'll just ignore this image forever in a tight loop
+					// we also need to clear the "lookup" cache as if this one never was looked up or we'll just ignore this image forever in a tight loop
+					if err := removeImageFromCache(ctx, build.Build.Img); err != nil {
+						panic(err)
+					}
 				} else {
 					// TODO if we have validSignatureState, this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
 				}
