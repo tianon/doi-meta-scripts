@@ -415,9 +415,6 @@ func main() {
 					panic(err)
 				}
 
-				// if we have no signatures and no keys to validate against, we're "valid" already (otherwise we have to dig deeper to know)
-				validSignatureState := len(signatures) == 0 && len(build.BonusData.ArchSignKeys) == 0
-
 				// if we have *any* signatures, we need to validate that every object in Manifests that we might *want* to sign has a corresponding entry
 				missingSignatures := false
 				if len(signatures) > 0 {
@@ -453,7 +450,6 @@ func main() {
 
 						// TODO print out a warning that we have signatures, but we're missing a signature for "manifest"
 						missingSignatures = true
-						validSignatureState = false
 						break ManifestsHaveSignaturesLoop
 					}
 				}
@@ -462,11 +458,16 @@ func main() {
 				delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
 				delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
 
+				// if we have no signatures and no keys to validate against, we're "valid" already (otherwise we have to dig deeper to know)
+				validSignatureState := !missingSignatures && len(signatures) == 0 && len(build.BonusData.ArchSignKeys) == 0
+
+				// TODO move more of this code into a library or function so we can write a boatload of tests over it
 				if !missingSignatures {
+					// loop over every public key we have configured to see if it's signed all our signatures
 				ArchSignKeysLoop:
 					for _, key := range build.BonusData.ArchSignKeys {
 						if key.PEM == "" {
-							// unsigned is fine!
+							// empty string in configuration means "unsigned is fine!"
 							if len(signatures) == 0 {
 								// we have no signatures, all is well
 								validSignatureState = true
@@ -477,7 +478,7 @@ func main() {
 							}
 						}
 						if len(signatures) == 0 {
-							// we don't have any signatures, so this key can't possibly be valid 😶
+							// we don't have any signatures, so this key can't possibly be "the one" that created them 😶
 							continue ArchSignKeysLoop
 							// (but we continue instead of break because a later key might be the explicitly empty "unsigned is fine" case above)
 						}
