@@ -96,9 +96,9 @@ jq <<<"$imageDescriptor" --tab '
 
 oci-put cosine-payload.json payloadDigest payloadSize payloadBase64
 
-# TODO sign the payload (potentially with AWS KMS) -- IDEALLY FROM THE SHA256 OF THE PAYLOAD DIRECTLY, NOT FROM THE PAYLOAD ITSELF, SO WE CAN CALCULATE THAT JUST ONCE, WHICH IS THE WHOLE REASON COSIGN DECIDED TO COUPLE DIGEST HASH AND SIGNING HASH
+# sign the payload
 # https://github.com/sigstore/cosign/blob/56d51141bdcfddc45609f17c73fd90fc40e965f3/specs/SIGNATURE_SPEC.md#signature-schemes
-payloadSignature='TODO=='
+payloadSignature="$("$BASHBREW_META_SCRIPTS/helpers/sign-digest.sh" "$payloadDigest")"
 export payloadSignature
 
 # https://github.com/opencontainers/image-spec/blob/v1.1.1/manifest.md#guidance-for-an-empty-descriptor
