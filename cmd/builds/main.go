@@ -545,7 +545,19 @@ func main() {
 						panic(err)
 					}
 				} else {
-					// TODO if we have validSignatureState, this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
+					// this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
+					// for "deploy" to create these "signatures" from nothing, we just have to sign the payload digest and note where to find the payload, since it needs to push the payload directly to a :sha256-xxx.sig, so we only need to record each "signed payload" digest, which manifest digest it's a signature for (which we use to pull a full descriptor from "resolved"), and the signature, and deploy can synthesize a full manifest to wrap it ✨
+					for _, signaturePayload := range signatures {
+						prodSign := exec.Command(metaScripts+"/helpers/sign-digest.sh", string(signaturePayload.Digest))
+						prodSign.Stderr = os.Stderr
+						if prodSignOut, err := prodSign.Output(); err != nil {
+							panic(err)
+						} else {
+							prodSignature := strings.TrimSpace(string(prodSignOut))
+							fmt.Fprintf(os.Stderr, "%q\n", prodSignature)
+							// TODO actually store "prodSignature" inside the build object (see TODO in type MetaBuild)
+						}
+					}
 				}
 				// TODO now that I have this all mostly written and working, I realize it could actually be a fully separate process that surgically filters/hacks up builds.json (and cache-builds.json) but I need to figure out how I'm going to actually push/share the prod signatures
 
