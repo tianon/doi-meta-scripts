@@ -216,7 +216,7 @@ def build_command:
 
 			if build_should_sign then
 				"# sign",
-				"\"$BASHBREW_META_SCRIPTS/helpers/cosine-sign.sh\" temp",
+				"\"$BASHBREW_META_SCRIPTS/helpers/sign-image.sh\" temp",
 				empty
 			else empty end,
 
@@ -264,7 +264,7 @@ def build_command:
 
 			if build_should_sign then
 				"# sign",
-				"\"$BASHBREW_META_SCRIPTS/helpers/cosine-sign.sh\" temp",
+				"\"$BASHBREW_META_SCRIPTS/helpers/sign-image.sh\" temp",
 				empty
 			else empty end,
 
