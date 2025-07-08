@@ -46,6 +46,7 @@ type MetaBuild struct {
 	Build   struct {
 		Img      string         `json:"img"`
 		Resolved *ocispec.Index `json:"resolved"`
+		// TODO signatures; need a ref for the payload (oistaging/xxx@sha256:xxx), the string signature, and a string of the manifest this is a signature of
 		BuildIDParts
 		ResolvedParents om.OrderedMap[ocispec.Index] `json:"resolvedParents"`
 	} `json:"build"`
@@ -418,6 +419,7 @@ func main() {
 				// if we have *any* signatures, we need to validate that every object in Manifests that we might *want* to sign has a corresponding entry
 				missingSignatures := false
 				if len(signatures) > 0 {
+					expectedSignatureCount := 0
 				ManifestsHaveSignaturesLoop:
 					for _, manifest := range build.Build.Resolved.Manifests {
 						// TODO should this logic for whether/what to sign live in "system-config.jq" too?
@@ -444,6 +446,8 @@ func main() {
 								}
 							}
 
+							expectedSignatureCount++
+
 							// we found a signature that matches this manifest, move on to checking the next manifest
 							continue ManifestsHaveSignaturesLoop
 						}
@@ -451,6 +455,11 @@ func main() {
 						// TODO print out a warning that we have signatures, but we're missing a signature for "manifest"
 						missingSignatures = true
 						break ManifestsHaveSignaturesLoop
+					}
+
+					// we also need to validate the reverse - that we don't have any signatures for other things (and since we counted how many we *should* have based on how many things we epxect to be signed, that's a simple equality check)
+					if !missingSignatures && len(signatures) != expectedSignatureCount {
+						panic(fmt.Sprintf("too *many* signatures?? have %d vs %d expected", len(signatures), expectedSignatureCount))
 					}
 				}
 
