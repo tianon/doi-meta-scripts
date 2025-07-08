@@ -6,6 +6,10 @@ shopt -s nullglob # if * matches nothing, return nothing
 dir="$(dirname "$BASH_SOURCE")"
 dir="$(readlink -ve "$dir")"
 
+# some bits of code need to detect that we're running tests, so we'll set a sentinel value to let them do so reliably
+export BASHBREW_META_SCRIPTS_RUNNING_TESTS='vigorously'
+# (with a value that's basically never going to be set accidentally, but is still easy/small to test for)
+
 export SOURCE_DATE_EPOCH=0 # TODO come up with a better way for a test to specify it needs things like this (maybe a file that gets sourced/read for options/setup type things?  could also provide args/swap 'out' like our "-r" hank below)
 
 # TODO arguments for choosing a test?  directory?  name?

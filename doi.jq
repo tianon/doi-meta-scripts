@@ -176,7 +176,7 @@ def build_should_sign:
 			.source.arches[.build.arch].tags[];
 			startswith("notary:")
 		)
-	) or (env.SOURCE_DATE_EPOCH//"") == "0" # for the tests
+	) or (env.BASHBREW_META_SCRIPTS_RUNNING_TESTS == "vigorously") # for the tests
 ;
 
 # input: "build" object (with "buildId" top level key)
