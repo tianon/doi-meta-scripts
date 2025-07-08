@@ -14,7 +14,7 @@ type CosignedPayload struct {
 	Signature           []byte             // decoded from base64 in annotation
 	Digest              ociregistry.Digest // the digest of the signed payload itself
 	Raw                 json.RawMessage    // the raw JSON form of the signed payload itself
-	CosignSimpleSigning                    // the pared form of the signed payload (but accessible directly so all the code using these gets simpler)
+	CosignSimpleSigning                    // the parsed form of the signed payload (but accessible directly so all the code using these gets simpler)
 }
 type CosignSimpleSigning struct {
 	// https://github.com/sigstore/cosign/blob/v2.5.0/specs/SIGNATURE_SPEC.md#simple-signing
