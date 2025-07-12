@@ -23,7 +23,10 @@ algorithm="${digest%%:*}"
 [ "$algorithm" = 'sha256' ] # TODO support more algorithms?
 hex="${digest#$algorithm:}"
 
-if [ -n "${BASHBREW_META_SIGN_AWS_KMS_KEY:-}" ]; then
+if [ -n "${!YUBECDSA_*}" ]; then
+	# https://github.com/tianon/yubecdsa
+	exec yubecdsa sign "$hex"
+elif [ -n "${BASHBREW_META_SIGN_AWS_KMS_KEY:-}" ]; then
 	base64="$(xxd -revert -plain <<<"$hex" | base64 --wrap=0)"
 	args=(
 		--key-id "$BASHBREW_META_SIGN_AWS_KMS_KEY"
