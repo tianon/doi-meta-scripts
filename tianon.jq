@@ -18,3 +18,21 @@ def build_should_sbom:
 def build_should_sign:
 	any(.source.arches[.build.arch].tags[]; IN("tianon/test:doi-sign"))
 ;
+
+# input: "build" object (with "buildId" top level key)
+# output: key-value of (architecture trust-boundary specific) public keys (in PEM format) that should be used to verify the validity of a given build (labelled with a superfluous name for our sake / to be embedded in "builds.json" so it's easier to identify which images are signed by a given key, especially during rotation periods)
+# - might (likely) have extraneous whitespace that should be trimmed/ignored for valid PEM parsing
+# - empty object or empty string means "no signature" should be considered valid
+def build_arch_sign_public_keys:
+	# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
+	if build_should_sign then
+		{
+			"YubiKey 4239413 Slot 82": "
+				-----BEGIN PUBLIC KEY-----
+				MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEG+1HMsDDAFXQrPkPi80/P4XmMsWJ
+				dD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==
+				-----END PUBLIC KEY-----
+			",
+		}
+	else {} end
+;
