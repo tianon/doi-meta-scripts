@@ -544,6 +544,7 @@ func main() {
 					if err := removeImageFromCache(ctx, build.Build.Img); err != nil {
 						panic(err)
 					}
+					// TODO we need to do *more* here somehow, because otherwise the "build" job will do "crane digest" to verify the build exists, see that it does, and immediately bail because "everything's fine, the build is done, right?"
 				} else {
 					// this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
 					// for "deploy" to create these "signatures" from nothing, we just have to sign the payload digest and note where to find the payload, since it needs to push the payload directly to a :sha256-xxx.sig, so we only need to record each "signed payload" digest, which manifest digest it's a signature for (which we use to pull a full descriptor from "resolved"), and the signature, and deploy can synthesize a full manifest to wrap it ✨
