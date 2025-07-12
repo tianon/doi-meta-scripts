@@ -412,7 +412,7 @@ func main() {
 				// if we have any signatures on this build, we need to validate them (and throw out the image / treat it as 404 if the signature is invalid/wrong)
 				signatures, err := registry.CosignSignatures(ctx, build.Build.Resolved)
 				if err != nil {
-					// TODO most errors here probably just mean we should treat it like bad signatures, but not 100%, so we need to sort through that instead of just bailing
+					// TODO most errors here probably just mean we should treat it like bad signatures, but not 100%, so we need to sort through that instead of just bailing ("panic: illegal base64 data at input byte 4" for example is clearly "badsig", but failures to fetch objects from the registry should explode instead)
 					panic(err)
 				}
 
