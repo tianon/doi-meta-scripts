@@ -1,4 +1,21 @@
 # docker:24.0.7-cli [amd64]
+# <preflight>
+# BASHBREW_ARCH sanity check
+buildArch='amd64'
+if [ -n "${BASHBREW_ARCH:-}" ] && [ "$BASHBREW_ARCH" != "$buildArch" ]; then
+	echo >&2 "error: BASHBREW_ARCH ($BASHBREW_ARCH) is not $buildArch"
+	exit 1
+fi
+# image is already *known* to exist, skip building it
+echo >&2 'warning: oisupport/staging-amd64:4b199ac326c74b3058a147e14f553af9e8e1659abc29bd3e82c9c9807b66ee43 is already *recorded* as built: oisupport/staging-amd64:4b199ac326c74b3058a147e14f553af9e8e1659abc29bd3e82c9c9807b66ee43@sha256:153793dfbac130679ad1eebd9e88b3772c47d3903a3f299c49d5c3f23a6e35d2'
+exec echo skip
+if ! digest="$(crane digest 'oisupport/staging-amd64:4b199ac326c74b3058a147e14f553af9e8e1659abc29bd3e82c9c9807b66ee43')"; then
+	# image does not exist (or we failed to look it up 🙈), build it
+	exit 0
+fi
+# image exists and must be valid build (as far as we can tell), skip building it again!
+exec echo skip
+# </preflight>
 # <pull>
 
 # </pull>
@@ -52,6 +69,23 @@ rm -rf temp
 # </push>
 
 # docker:24.0.7-windowsservercore-ltsc2022 [windows-amd64]
+# <preflight>
+# BASHBREW_ARCH sanity check
+buildArch='windows-amd64'
+if [ -n "${BASHBREW_ARCH:-}" ] && [ "$BASHBREW_ARCH" != "$buildArch" ]; then
+	echo >&2 "error: BASHBREW_ARCH ($BASHBREW_ARCH) is not $buildArch"
+	exit 1
+fi
+# image is already *known* to exist, skip building it
+echo >&2 'warning: oisupport/staging-windows-amd64:9b405cfa5b88ba65121aabdb95ae90fd2e1fee7582174de82ae861613ae3072e is already *recorded* as built: oisupport/staging-windows-amd64:9b405cfa5b88ba65121aabdb95ae90fd2e1fee7582174de82ae861613ae3072e@sha256:69aba7120e3f4014bfa80f4eae2cfc9698dcb6b8a5d64daf06de4039a19846ce'
+exec echo skip
+if ! digest="$(crane digest 'oisupport/staging-windows-amd64:9b405cfa5b88ba65121aabdb95ae90fd2e1fee7582174de82ae861613ae3072e')"; then
+	# image does not exist (or we failed to look it up 🙈), build it
+	exit 0
+fi
+# image exists and must be valid build (as far as we can tell), skip building it again!
+exec echo skip
+# </preflight>
 # <pull>
 docker pull 'mcr.microsoft.com/windows/servercore@sha256:d4ab2dd7d3d0fce6edc5df459565a4c96bbb1d0148065b215ab5ddcab1e42eb4'
 docker tag 'mcr.microsoft.com/windows/servercore@sha256:d4ab2dd7d3d0fce6edc5df459565a4c96bbb1d0148065b215ab5ddcab1e42eb4' 'mcr.microsoft.com/windows/servercore:ltsc2022'
@@ -85,6 +119,23 @@ docker push 'oisupport/staging-windows-amd64:9b405cfa5b88ba65121aabdb95ae90fd2e1
 # </push>
 
 # busybox:1.36.1 [amd64]
+# <preflight>
+# BASHBREW_ARCH sanity check
+buildArch='amd64'
+if [ -n "${BASHBREW_ARCH:-}" ] && [ "$BASHBREW_ARCH" != "$buildArch" ]; then
+	echo >&2 "error: BASHBREW_ARCH ($BASHBREW_ARCH) is not $buildArch"
+	exit 1
+fi
+# image is already *known* to exist, skip building it
+echo >&2 'warning: oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f is already *recorded* as built: oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f@sha256:70a227928672dffb7d24880bad1a705b527fab650f7503c191e48a209c4a0d10'
+exec echo skip
+if ! digest="$(crane digest 'oisupport/staging-amd64:191402ad0feacf03daf9d52a492207e73ef08b0bd17265043aea13aa27e2bb3f')"; then
+	# image does not exist (or we failed to look it up 🙈), build it
+	exit 0
+fi
+# image exists and must be valid build (as far as we can tell), skip building it again!
+exec echo skip
+# </preflight>
 # <pull>
 
 # </pull>

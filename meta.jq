@@ -27,6 +27,50 @@ def normalize_ref_to_docker:
 	| ltrimstr("library/")
 ;
 # input: "build" object (with "buildId" top level key)
+# output: string "pre-flight check command", may be multiple lines, expects to run in Bash with "set -Eeuo pipefail" -- will output the string "skip" if this build should be skipped (already completed, etc)
+# usage:
+#   preflight="$(<preflight_command>)"
+#   if [ "$preflight" = 'skip' ]; then
+#     # skip in a CI-wrapper-system appropriate way
+#   fi
+def preflight_command:
+	[
+		"# BASHBREW_ARCH sanity check",
+		"buildArch=\(.build.arch | @sh)",
+		"if [ -n \"${BASHBREW_ARCH:-}\" ] && [ \"$BASHBREW_ARCH\" != \"$buildArch\" ]; then",
+		"\techo >&2 \"error: BASHBREW_ARCH ($BASHBREW_ARCH) is not $buildArch\"",
+		"\texit 1",
+		"fi",
+
+		if .build.resolved then
+			"# image is already *known* to exist, skip building it",
+			"echo >&2 \("warning: \(.build.img) is already *recorded* as built: \(.build.resolved.annotations["org.opencontainers.image.ref.name"])" | @sh)",
+			"exec echo skip"
+		else empty end,
+
+		# TODO find/make a clean way to detect 404 vs other more serious errors (via "./cmd/lookup", maybe?)
+		"if ! digest=\"$(crane digest \(.build.img | @sh))\"; then",
+		"\t# image does not exist (or we failed to look it up 🙈), build it",
+		"\texit 0",
+		"fi",
+
+		(
+			.build.ignore[]?
+			|
+			"if [ \"$digest\" = \(@sh) ]; then",
+			"\t# image is one of the ones we've been instructed to explicitly ignore (failed signature, etc), build it",
+			"\texit 0",
+			"fi",
+			empty
+		),
+
+		"# image exists and must be valid build (as far as we can tell), skip building it again!",
+		"exec echo skip",
+
+		empty
+	] | join("\n")
+;
+# input: "build" object (with "buildId" top level key)
 # output: string "pull command" ("docker pull ..."), may be multiple lines, expects to run in Bash with "set -Eeuo pipefail", might be empty
 def pull_command:
 	normalized_builder as $builder
@@ -294,6 +338,7 @@ def push_command:
 # output: "commands" object with keys "pull", "build", "push"
 def commands:
 	{
+		preflight: preflight_command,
 		pull: pull_command,
 		build: build_command,
 		push: push_command,

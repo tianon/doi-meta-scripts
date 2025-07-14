@@ -45,6 +45,7 @@ type MetaBuild struct {
 	BuildID string `json:"buildId"`
 	Build   struct {
 		Img      string         `json:"img"`
+		Ignore   []string       `json:"ignore,omitempty"` // a list of digests to explicitly ignore / treat as if they don't exist (for example, if signature verification fails)
 		Resolved *ocispec.Index `json:"resolved"`
 		// TODO signatures; need a ref for the payload (oistaging/xxx@sha256:xxx), the string signature, and a string of the manifest this is a signature of
 		BuildIDParts
@@ -545,12 +546,23 @@ func main() {
 
 				if !validSignatureState {
 					// if we have signatures but they aren't valid (or aren't complete), this build is completely dead to us
+					if build.Build.Resolved != nil {
+						// TODO consider embedding in build.Build.Resolved an easier lookup for the original digest?  even if only for in-code not written in the JSON 🤔  (reparsing a string WE CREATED as a ref feels ... wrong)
+						ref, err := registry.ParseRef(build.Build.Resolved.Annotations[ocispec.AnnotationRefName])
+						if err != nil {
+							panic(err) // TODO what
+						}
+						if ref.Digest == "" {
+							panic("ref " + ref.String() + " does not have a digest and should??")
+						}
+						// we have to record the digest of any image we *did* find as "invalid" so that the "build" code can know to ignore it too (when it does a pre-flight "does this build already exist?" check)
+						build.Build.Ignore = append(build.Build.Ignore, string(ref.Digest))
+					}
 					build.Build.Resolved = nil
 					// we also need to clear the "lookup" cache as if this one never was looked up or we'll just ignore this image forever in a tight loop
 					if err := removeImageFromCache(ctx, build.Build.Img); err != nil {
 						panic(err)
 					}
-					// TODO we need to do *more* here somehow, because otherwise the "build" job will do "crane digest" to verify the build exists, see that it does, and immediately bail because "everything's fine, the build is done, right?"
 				} else {
 					// this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
 					// for "deploy" to create these "signatures" from nothing, we just have to sign the payload digest and note where to find the payload, since it needs to push the payload directly to a :sha256-xxx.sig, so we only need to record each "signed payload" digest, which manifest digest it's a signature for (which we use to pull a full descriptor from "resolved"), and the signature, and deploy can synthesize a full manifest to wrap it ✨

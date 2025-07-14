@@ -97,18 +97,29 @@ node(nodeExpression) { ansiColor('xterm') {
 	dir('meta') {
 		def obj = ''
 		stage('JSON') {
-			obj = sh(returnStdout: true, script: '''
+			obj = sh(returnStdout: true, script: '''#!/usr/bin/env bash
+				set -Eeuo pipefail -x
+
 				[ -n "$BUILD_ID" ]
-				shell="$(
-					jq -L"$BASHBREW_META_SCRIPTS" --raw-output '
-						include "meta";
+
+				json="$(jq -L"$BASHBREW_META_SCRIPTS" --compact-output '
+					include "meta";
+					if has(env.BUILD_ID) then
 						.[env.BUILD_ID]
-						| select(needs_build and .build.arch == env.BASHBREW_ARCH) # sanity check
-						| .commands = commands
-						| @sh "if ! crane digest \\(.build.img) >&2; then printf %s \\(tojson); exit 0; fi"
-					' builds.json
-				)"
-				eval "$shell"
+					else
+						error("build \\(env.BUILD_ID) does not exist!")
+					end
+					| .commands = commands
+				' builds.json)"
+
+				preflight="$(jq <<<"$json" --raw-output '.commands.preflight')"
+				preflight="$(eval "$preflight")"
+				if [ "$preflight" = 'skip' ]; then
+					# no output 👀 (see below)
+					exit 0
+				fi
+
+				cat <<<"$json"
 			''').trim()
 		}
 		if (obj) {
