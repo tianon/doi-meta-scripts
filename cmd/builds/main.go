@@ -463,9 +463,11 @@ func main() {
 					}
 				}
 
-				// explicitly clear out the annotations we'll use to record "signed by" information (so they can't possibly leak in from anywhere and we can rely on "if they're set here, we set them after verification")
-				delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
-				delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
+				if build.Build.Resolved != nil {
+					// explicitly clear out the annotations we'll use to record "signed by" information (so they can't possibly leak in from anywhere and we can rely on "if they're set here, we set them after verification")
+					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
+					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
+				}
 
 				// if we have no signatures and no keys to validate against, we're "valid" already (otherwise we have to dig deeper to know)
 				validSignatureState := !missingSignatures && len(signatures) == 0 && len(build.BonusData.ArchSignKeys) == 0
