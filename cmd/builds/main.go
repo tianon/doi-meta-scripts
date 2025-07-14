@@ -101,7 +101,7 @@ var (
 func diskCacheNormalizeRefForCacheKey(img string) (registry.Reference, error) {
 	ref, err := registry.ParseRef(img)
 	if err != nil {
-		return ref, err
+		return ref, fmt.Errorf("failed to parse ref %q: %w", img, err)
 	}
 	if ref.Digest != "" {
 		// we use "ref" as a cache key, so if we have an explicit digest, ditch any tag data
@@ -135,7 +135,11 @@ func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocis
 	refString := ref.String()
 
 	cacheFunc, wasCached := cacheResolve.LoadOrStore(refString, sync.OnceValues(func() (*ocispec.Index, error) {
-		return registry.SynthesizeIndex(ctx, ref)
+		index, err := registry.SynthesizeIndex(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to synthesize index for %q: %w", ref.String(), err)
+		}
+		return index, nil
 	}))
 
 	index, err := cacheFunc.(func() (*ocispec.Index, error))()
