@@ -137,7 +137,7 @@ func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocis
 	cacheFunc, wasCached := cacheResolve.LoadOrStore(refString, sync.OnceValues(func() (*ocispec.Index, error) {
 		index, err := registry.SynthesizeIndex(ctx, ref)
 		if err != nil {
-			return nil, fmt.Errorf("failed to synthesize index for %q: %w", ref.String(), err)
+			return nil, fmt.Errorf("failed to synthesize index: %w", err) // we don't decorate this with "ref" because SynthesizeIndex already decorates all the errors it returns with an appropriate ref
 		}
 		return index, nil
 	}))
