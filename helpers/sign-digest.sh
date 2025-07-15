@@ -23,10 +23,7 @@ algorithm="${digest%%:*}"
 [ "$algorithm" = 'sha256' ] # TODO support more algorithms?
 hex="${digest#$algorithm:}"
 
-if [ -n "${!YUBECDSA_*}" ]; then
-	# https://github.com/tianon/yubecdsa
-	exec yubecdsa sign "$hex"
-elif [ -n "${BASHBREW_META_SIGN_AWS_KMS_KEY:-}" ]; then
+if [ -n "${BASHBREW_META_SIGN_AWS_KMS_KEY:-}" ]; then
 	base64="$(xxd -revert -plain <<<"$hex" | base64 --wrap=0)"
 	args=(
 		--key-id "$BASHBREW_META_SIGN_AWS_KMS_KEY"
@@ -37,6 +34,9 @@ elif [ -n "${BASHBREW_META_SIGN_AWS_KMS_KEY:-}" ]; then
 		--output text
 	)
 	exec aws kms sign "${args[@]}"
+elif [ -n "${!YUBECDSA_*}" ]; then
+	# https://github.com/tianon/yubecdsa
+	exec yubecdsa sign "$hex"
 else
 	echo >&2 "error: expected signing method for '$digest' is unknown (need BASHBREW_META_SIGN_AWS_KMS_KEY, etc set)"
 	exit 1
