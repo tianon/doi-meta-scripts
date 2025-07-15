@@ -94,6 +94,18 @@ const jqQuery = `
 	}
 `
 
+var metaScripts string = func() string {
+	metaScripts := os.Getenv("BASHBREW_META_SCRIPTS")
+	if metaScripts == "" {
+		panic("BASHBREW_META_SCRIPTS is not set (or empty) and is required")
+	} else if fi, err := os.Stat(metaScripts); err != nil {
+		panic(err)
+	} else if !fi.Mode().IsDir() {
+		panic("invalid BASHBREW_META_SCRIPTS: '" + metaScripts + "' (not a directory)")
+	}
+	return metaScripts
+}()
+
 var (
 	// keys are image/tag names, values are functions that return either *ocispec.Index or error
 	cacheResolve = sm.Map[string, func() (*ocispec.Index, error)]{}
@@ -319,15 +331,7 @@ func main() {
 	go func() {
 		// Go does not have ordered maps *and* is complicated to read an object, make a tiny modification, write it back out (without modelling the entire schema), so we'll let a single invocation of jq solve both problems (munging the documents in the way we expect *and* giving us an in-order stream)
 		// doing this *also* lets us source our "system-config" to pull in useful values like whether and how a particular should be signed (so those can be maintained in the single source-of-truth that is our jq), and clean up a bunch of gnarly Go by writing slightly more logic in jq instead
-		metaScripts := os.Getenv("BASHBREW_META_SCRIPTS")
-		if metaScripts == "" {
-			panic("BASHBREW_META_SCRIPTS is not set (or empty) and is required")
-		} else if fi, err := os.Stat(metaScripts); err != nil {
-			panic(err)
-		} else if !fi.Mode().IsDir() {
-			panic("invalid BASHBREW_META_SCRIPTS: '" + metaScripts + "' (not a directory)")
-		}
-		jq := exec.Command("jq", "-L"+metaScripts, "--compact-output", jqQuery, sourcesJsonFile)
+		jq := exec.CommandContext(ctx, "jq", "-L"+metaScripts, "--compact-output", jqQuery, sourcesJsonFile)
 		jq.Stderr = os.Stderr
 
 		stdout, err := jq.StdoutPipe()
