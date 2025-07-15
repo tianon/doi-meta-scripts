@@ -45,9 +45,9 @@ type BuildIDParts struct {
 type MetaBuild struct {
 	BuildID string `json:"buildId"`
 	Build   struct {
-		Img      string         `json:"img"`
-		Ignore   []string       `json:"ignore,omitempty"` // a list of digests to explicitly ignore / treat as if they don't exist (for example, if signature verification fails)
-		Resolved *ocispec.Index `json:"resolved"`
+		Img      string            `json:"img"`
+		Ignore   []registry.Digest `json:"ignore,omitempty"` // a list of digests to explicitly ignore / treat as if they don't exist (for example, if signature verification fails)
+		Resolved *ocispec.Index    `json:"resolved"`
 		// TODO signatures; need a ref for the payload (oistaging/xxx@sha256:xxx), the string signature, and a string of the manifest this is a signature of
 		BuildIDParts
 		ResolvedParents om.OrderedMap[ocispec.Index] `json:"resolvedParents"`
@@ -558,7 +558,7 @@ func main() {
 							panic("ref " + ref.String() + " does not have a digest and should??")
 						}
 						// we have to record the digest of any image we *did* find as "invalid" so that the "build" code can know to ignore it too (when it does a pre-flight "does this build already exist?" check)
-						build.Build.Ignore = append(build.Build.Ignore, string(ref.Digest))
+						build.Build.Ignore = append(build.Build.Ignore, ref.Digest)
 					}
 					build.Build.Resolved = nil
 					// we also need to clear the "lookup" cache as if this one never was looked up or we'll just ignore this image forever in a tight loop
