@@ -63,8 +63,8 @@ func CosignSignatures(ctx context.Context, index *ocispec.Index) ([]CosignedPayl
 			return nil, err // TODO annotate error
 		}
 		for _, layerDesc := range manifest.Layers {
-			signatureBase64 := layerDesc.Annotations[annotationCosignSignature]
-			if layerDesc.MediaType != mediaTypeCosignSimpleSigning || signatureBase64 == "" {
+			signatureBase64 := layerDesc.Annotations[AnnotationCosignSignature]
+			if layerDesc.MediaType != MediaTypeCosignSimpleSigning || signatureBase64 == "" {
 				continue
 			}
 			var payload CosignedPayload

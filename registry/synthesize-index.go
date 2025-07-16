@@ -91,7 +91,7 @@ func SynthesizeIndex(ctx context.Context, ref Reference) (*ocispec.Index, error)
 
 		delete(m.Annotations, AnnotationBashbrewArch) // don't trust any remote-provided value for bashbrew arch (since it's really inexpensive for us to calculate fresh and it's only a hint anyhow)
 		if m.Annotations[AnnotationBuildkitReferenceType] == AnnotationBuildkitReferenceTypeAttestation || m.ArtifactType == ArtifactTypeCosignSignature {
-			if subject := seen[m.Annotations[annotationBuildkitReferenceDigest]]; subject != nil && subject.Annotations[AnnotationBashbrewArch] != "" {
+			if subject := seen[m.Annotations[AnnotationBuildkitReferenceDigest]]; subject != nil && subject.Annotations[AnnotationBashbrewArch] != "" {
 				m.Annotations[AnnotationBashbrewArch] = subject.Annotations[AnnotationBashbrewArch]
 			} else {
 				// if our subject is missing, delete this entry from the index (see "i")

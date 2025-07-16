@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -48,9 +49,10 @@ type MetaBuild struct {
 		Img      string            `json:"img"`
 		Ignore   []registry.Digest `json:"ignore,omitempty"` // a list of digests to explicitly ignore / treat as if they don't exist (for example, if signature verification fails)
 		Resolved *ocispec.Index    `json:"resolved"`
-		// TODO signatures; need a ref for the payload (oistaging/xxx@sha256:xxx), the string signature, and a string of the manifest this is a signature of
 		BuildIDParts
 		ResolvedParents om.OrderedMap[ocispec.Index] `json:"resolvedParents"`
+
+		ProdSignatures []ocispec.Descriptor `json:"prodSignatures,omitempty"`
 	} `json:"build"`
 	Source json.RawMessage `json:"source"`
 
@@ -109,6 +111,11 @@ var metaScripts string = func() string {
 var (
 	// keys are image/tag names, values are functions that return either *ocispec.Index or error
 	cacheResolve = sm.Map[string, func() (*ocispec.Index, error)]{}
+
+	// keys are digests (of "simple signing" payloads), values are (base64 string) "prod" signatures
+	// this is treated as read-only ("loadCacheFromFile" is the only function that should ever write to this variable)
+	cacheSignatures = map[registry.Digest]string{}
+	// (the writing half of this dataset is covered by "saveCacheMutex")
 
 	cacheFile string
 )
@@ -227,15 +234,15 @@ func parsePublicKey(keyPEM string) (*ecdsa.PublicKey, error) {
 	// Tianon considered a cache for parsing pubkeys because they're going to have a lot of overlap (but with mutexes because this all happens heavily in parallel) -- in prod, we'll probably have like 4-5 unique pubkeys total across all ~7000 images -- but ultimately decided against it because the mutexes will make everything *slower* instead of faster, and the "heavy" part of this whole thing is verified *not* the pem/x509/ASN1 parsing, but the verification (which makes sense, as that's where the BigNum math that makes the Cryptography Magic ✨ happens)
 	pubKeyBlock, _ := pem.Decode([]byte(keyPEM))
 	if pubKeyBlock == nil || pubKeyBlock.Type != "PUBLIC KEY" {
-		return nil, fmt.Errorf(`invalid public key (type %q vs "PUBLIC KEY"):\n\n%s`, pubKeyBlock.Type, keyPEM)
+		return nil, fmt.Errorf("invalid public key (type %q vs PUBLIC KEY):\n\n%s", pubKeyBlock.Type, keyPEM)
 	}
 	pubKeyX509, err := x509.ParsePKIXPublicKey(pubKeyBlock.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf(`invalid public key: %w\n\n%s`, err, keyPEM)
+		return nil, fmt.Errorf("invalid public key: %w\n\n%s", err, keyPEM)
 	}
 	pubKey, ok := pubKeyX509.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf(`public key valid but not ECDSA (%T)\n\n%s`, pubKeyX509, keyPEM)
+		return nil, fmt.Errorf("public key valid but not ECDSA (%T)\n\n%s", pubKeyX509, keyPEM)
 	}
 	if params := pubKey.Params(); params.BitSize < 256 {
 		return nil, fmt.Errorf("public key (%s; %d bits) not P-256 (or larger) curve:\n\n%s", params.Name, params.BitSize, keyPEM)
@@ -243,8 +250,92 @@ func parsePublicKey(keyPEM string) (*ecdsa.PublicKey, error) {
 	return pubKey, nil
 }
 
+func validateSignatureBase64(pubKey *ecdsa.PublicKey, digest registry.Digest, signature string) (bool, error) {
+	rawSignature, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return false, err
+	}
+	return validateSignature(pubKey, digest, rawSignature)
+}
+
+func validateSignature(pubKey *ecdsa.PublicKey, digest registry.Digest, rawSignature []byte) (bool, error) {
+	if digest.Algorithm() != "sha256" { // TODO allow more algorithms as long as pubKey.Params().BitSize is large enough?
+		return false, fmt.Errorf("digest not sha256: %s", digest)
+	}
+	rawDigest, err := hex.DecodeString(digest.Encoded())
+	if err != nil {
+		return false, err
+	}
+	return ecdsa.VerifyASN1(pubKey, rawDigest, rawSignature), nil
+}
+
+var (
+	prodPublicKey = sync.OnceValue(func() *ecdsa.PublicKey {
+		if publicKeyPEM := strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY")); publicKeyPEM != "" {
+			// we know what the public key is supposed to be, so let's validate the cached signature before using/trusting it
+			pubKey, err := parsePublicKey(publicKeyPEM)
+			if err != nil {
+				// panic instead of return because this is bad CI job configuration, not bad data, so it should blow up ASAP
+				panic(fmt.Sprintf("BASHBREW_META_SIGN_PROD_PUBLIC_KEY is broken/wrong?  %v\n\n%s", err, publicKeyPEM))
+			}
+			return pubKey
+		}
+		return nil
+	})
+	verifyProdPublicKeyOnce sync.Once
+)
+
+func prodSignDigest(ctx context.Context, digest registry.Digest) (string, error) {
+	var signature string
+	if cache, ok := cacheSignatures[digest]; ok {
+		if pubKey := prodPublicKey(); pubKey != nil {
+			// we know what the public key is supposed to be, so let's validate the cached signature before using/trusting it
+			if valid, err := validateSignatureBase64(pubKey, digest, cache); err == nil && valid {
+				signature = cache
+			}
+		} else {
+			signature = cache
+		}
+	}
+
+	if signature == "" {
+		cmd := exec.CommandContext(ctx, metaScripts+"/helpers/sign-digest.sh", string(digest))
+		cmd.Stderr = os.Stderr
+		if cmdOut, err := cmd.Output(); err != nil {
+			return "", fmt.Errorf("failed to sign %q: %w", digest, err)
+		} else {
+			signature = strings.TrimSpace(string(cmdOut))
+
+			if pubKey := prodPublicKey(); pubKey != nil {
+				// if the public key env variable is set, we should validate that what we got matches it, but only the first time (as a rough sanity check that our "sign-digest" method's output matches our configured public key)
+				verifyProdPublicKeyOnce.Do(func() {
+					if valid, err := validateSignatureBase64(pubKey, digest, signature); err != nil {
+						panic(fmt.Sprintf("error attempting to validate generated signature against BASHBREW_META_SIGN_PROD_PUBLIC_KEY: %v\n\n%s", err, strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY"))))
+					} else if !valid {
+						panic(fmt.Sprintf("the output of `sign-digest.sh` doesn't match the configured BASHBREW_META_SIGN_PROD_PUBLIC_KEY! 😬\n\ndigest: %s\nsignature: %s\npublic key:\n\n%s", digest, signature, strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY"))))
+					}
+				})
+			}
+		}
+	}
+
+	saveCacheMutex.Lock()
+	if saveCache != nil {
+		if saveCacheSignature, ok := saveCache.Signatures[digest]; ok {
+			// if we have *somehow* signed the same digest twice in this one process, that's both unusual and we should be consistent up-front and return that previous signature (not wait for the next round to load from the cache to make us consistent) -- yes this throws away work we've already done, but it's small and will be cached next time we run (and the likelihood of us even hitting this specific codepath is practically zero)
+			signature = saveCacheSignature
+		} else {
+			saveCache.Signatures[digest] = signature
+		}
+	}
+	saveCacheMutex.Unlock()
+
+	return signature, nil
+}
+
 type cacheFileContents struct {
-	Indexes map[registry.Reference]*ocispec.Index `json:"indexes"`
+	Indexes    map[registry.Reference]*ocispec.Index `json:"indexes"`
+	Signatures map[registry.Digest]string            `json:"signatures,omitempty"`
 }
 
 var (
@@ -259,7 +350,10 @@ func loadCacheFromFile() error {
 
 	// now that we know we have a file we want cache to go into (and come from), let's initialize the "saveCache" (which will be written when the whole process is done / we're successful, and *only* caches staging images)
 	saveCacheMutex.Lock()
-	saveCache = &cacheFileContents{Indexes: map[registry.Reference]*ocispec.Index{}}
+	saveCache = &cacheFileContents{
+		Indexes:    map[registry.Reference]*ocispec.Index{},
+		Signatures: map[registry.Digest]string{},
+	}
 	saveCacheMutex.Unlock()
 
 	f, err := os.Open(cacheFile)
@@ -289,6 +383,10 @@ func loadCacheFromFile() error {
 		if index2 != index {
 			panic("index2 != index??? " + img.String())
 		}
+	}
+
+	if cache.Signatures != nil {
+		cacheSignatures = cache.Signatures
 	}
 
 	return nil
@@ -531,17 +629,10 @@ func main() {
 						}
 
 						for _, signature := range signatures {
-							if signature.Digest.Algorithm() != "sha256" {
-								// TODO this should probably just be greated like a "bad" signature (and thus cause the image to be considered invalid)
-								panic("signed payload not sha256: " + signature.Digest)
-							}
-							digest, err := hex.DecodeString(signature.Digest.Encoded())
-							if err != nil {
-								// TODO this should probably just be greated like a "bad" signature (and thus cause the image to be considered invalid)
-								panic("invalid signature digest, somehow: " + err.Error())
-							}
-							// https://github.com/sigstore/sigstore/blob/a9d80542815fe834b51b17c6291feb61864f2ffb/pkg/signature/ecdsa.go#L171
-							if !ecdsa.VerifyASN1(pubKey, digest, signature.Signature) {
+							if valid, err := validateSignature(pubKey, signature.Digest, signature.Signature); err != nil {
+								// TODO this should probably just be treated like a "bad" signature (and thus cause the image to be considered invalid)
+								panic(err)
+							} else if !valid {
 								// this key's not the one! (TODO should we print a debug log here?)
 								continue ArchSignKeysLoop
 							}
@@ -581,15 +672,20 @@ func main() {
 					// this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
 					// for "deploy" to create these "signatures" from nothing, we just have to sign the payload digest and note where to find the payload, since it needs to push the payload directly to a :sha256-xxx.sig, so we only need to record each "signed payload" digest, which manifest digest it's a signature for (which we use to pull a full descriptor from "resolved"), and the signature, and deploy can synthesize a full manifest to wrap it ✨
 					for _, signaturePayload := range signatures {
-						prodSign := exec.Command(metaScripts+"/helpers/sign-digest.sh", string(signaturePayload.Digest))
-						prodSign.Stderr = os.Stderr
-						if prodSignOut, err := prodSign.Output(); err != nil {
-							panic(err)
-						} else {
-							prodSignature := strings.TrimSpace(string(prodSignOut))
-							fmt.Fprintf(os.Stderr, "%q\n", prodSignature)
-							// TODO actually store "prodSignature" inside the build object (see TODO in type MetaBuild)
+						prodSignature, err := prodSignDigest(ctx, signaturePayload.Digest)
+						if err != nil {
+							panic(fmt.Sprintf("prod signing of %q failed: %v", build.Build.Img, err))
 						}
+						build.Build.ProdSignatures = append(build.Build.ProdSignatures, ocispec.Descriptor{
+							MediaType: registry.MediaTypeCosignSimpleSigning,
+							Digest:    signaturePayload.Digest,
+							Size:      int64(len(signaturePayload.Raw)),
+							Annotations: map[string]string{
+								registry.AnnotationCosignSignature:         prodSignature,
+								registry.AnnotationBuildkitReferenceDigest: string(signaturePayload.ManifestDigest),
+							},
+							// TODO ? (we can copy this object from the ".build.img" repo so we don't need it here too unless we actually want/need to sign something different here than we did during build, and it's non-trivial in size when we have thousands of them) -- Data: signaturePayload.Raw,
+						})
 					}
 				}
 				// TODO now that I have this all mostly written and working, I realize it could actually be a fully separate process that surgically filters/hacks up builds.json (and cache-builds.json) but I need to figure out how I'm going to actually push/share the prod signatures
