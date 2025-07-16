@@ -223,6 +223,26 @@ func resolveArchIndex(ctx context.Context, img string, arch string, diskCacheFor
 	return index, nil
 }
 
+func parsePublicKey(keyPEM string) (*ecdsa.PublicKey, error) {
+	// Tianon considered a cache for parsing pubkeys because they're going to have a lot of overlap (but with mutexes because this all happens heavily in parallel) -- in prod, we'll probably have like 4-5 unique pubkeys total across all ~7000 images -- but ultimately decided against it because the mutexes will make everything *slower* instead of faster, and the "heavy" part of this whole thing is verified *not* the pem/x509/ASN1 parsing, but the verification (which makes sense, as that's where the BigNum math that makes the Cryptography Magic ✨ happens)
+	pubKeyBlock, _ := pem.Decode([]byte(keyPEM))
+	if pubKeyBlock == nil || pubKeyBlock.Type != "PUBLIC KEY" {
+		return nil, fmt.Errorf(`invalid public key (type %q vs "PUBLIC KEY"):\n\n%s`, pubKeyBlock.Type, keyPEM)
+	}
+	pubKeyX509, err := x509.ParsePKIXPublicKey(pubKeyBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf(`invalid public key: %w\n\n%s`, err, keyPEM)
+	}
+	pubKey, ok := pubKeyX509.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf(`public key valid but not ECDSA (%T)\n\n%s`, pubKeyX509, keyPEM)
+	}
+	if params := pubKey.Params(); params.BitSize < 256 {
+		return nil, fmt.Errorf("public key (%s; %d bits) not P-256 (or larger) curve:\n\n%s", params.Name, params.BitSize, keyPEM)
+	}
+	return pubKey, nil
+}
+
 type cacheFileContents struct {
 	Indexes map[registry.Reference]*ocispec.Index `json:"indexes"`
 }
@@ -505,21 +525,9 @@ func main() {
 							// (but we continue instead of break because a later key might be the explicitly empty "unsigned is fine" case above)
 						}
 
-						// TODO consider cache for parsing pubkeys because they're going to have a lot of overlap (but with mutexes because this all happens heavily in parallel) -- in prod, we'll probably have like 4-5 unique pubkeys total across all ~7000 images
-						pubKeyBlock, _ := pem.Decode([]byte(key.PEM))
-						if pubKeyBlock == nil || pubKeyBlock.Type != "PUBLIC KEY" {
-							panic("invalid public key in config:\n\n" + key.PEM)
-						}
-						pubKeyX509, err := x509.ParsePKIXPublicKey(pubKeyBlock.Bytes)
+						pubKey, err := parsePublicKey(key.PEM)
 						if err != nil {
-							panic("invalid public key in config: " + err.Error() + "\n\n" + key.PEM)
-						}
-						pubKey, ok := pubKeyX509.(*ecdsa.PublicKey)
-						if !ok {
-							panic("public key in config valid, but not ecdsa:\n\n" + key.PEM)
-						}
-						if pubKey.Params().Name != "P-256" {
-							panic("public key not P-256 curve:\n\n" + key.PEM)
+							panic(err)
 						}
 
 						for _, signature := range signatures {
