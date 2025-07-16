@@ -25,7 +25,14 @@ shell="$(jq -L"$BASHBREW_META_SCRIPTS" --raw-output '
 	)
 	| .manifests[0]
 	| @sh "export indexDigest=\(.digest)",
-		@sh "export indexRefName=\(.annotations["org.opencontainers.image.ref.name"])"
+		@sh "export indexRefName=\(
+			.annotations
+			| .["io.containerd.image.name"]
+				// .["org.opencontainers.image.ref.name"]
+			# TODO this is "normalize_ref_to_docker" from "meta.jq" that I do not want to import here but probably should move to a different file so it can be used here
+			| ltrimstr("docker.io/")
+			| ltrimstr("library/")
+		)"
 ' index.json)"
 eval "$shell"
 [ -n "$indexDigest" ]
