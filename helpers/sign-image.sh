@@ -13,7 +13,7 @@ BASHBREW_META_SCRIPTS="$(cd "$BASHBREW_META_SCRIPTS" && pwd -P)"
 cd "$layout"
 
 # verify that index contains a single image index
-indexDigest="$(jq -L"$BASHBREW_META_SCRIPTS" --raw-output '
+shell="$(jq -L"$BASHBREW_META_SCRIPTS" --raw-output '
 	include "validate";
 	include "oci";
 	validate_oci_index({
@@ -24,9 +24,11 @@ indexDigest="$(jq -L"$BASHBREW_META_SCRIPTS" --raw-output '
 		validate_IN(.mediaType; media_types_index)
 	)
 	| .manifests[0]
-	| .digest
+	| @sh "export indexDigest=\(.digest)",
+		@sh "export indexRefName=\(.annotations["org.opencontainers.image.ref.name"])"
 ' index.json)"
-export indexDigest
+eval "$shell"
+[ -n "$indexDigest" ]
 
 # ... which contains a single image manifest (optionally also attestation manifest)
 imageDescriptor="$(jq -L"$BASHBREW_META_SCRIPTS" --compact-output '
@@ -84,7 +86,7 @@ jq <<<"$imageDescriptor" --tab '
 		critical: {
 			type: "cosign container image signature",
 			image: { "docker-manifest-digest": .digest },
-			identity: { "docker-reference": "TODO" }, # TODO XXXXXXXXXXXXXXX (need to somehow get at least the final repo name, if not also a meaningful tag)
+			identity: { "docker-reference": (env.indexRefName // "") },
 		},
 		optional: {
 			creator: "https://github.com/docker-library/meta-scripts", # TODO is this a good value?
