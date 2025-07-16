@@ -21,7 +21,15 @@ BASHBREW_META_SCRIPTS="$(cd "$BASHBREW_META_SCRIPTS" && pwd -P)"
 shell="$(jq -L"$BASHBREW_META_SCRIPTS" --slurp --raw-output '
 	include "validate";
 	validate_one
-	| @sh "buildObj=\(tojson)",
+	| @sh "export buildObj=\(tojson)",
+	@sh "export firstTag=\(first(
+		(
+			.source.arches[]?
+			| .tags[]?, .archTags[]?
+		),
+		.build.img // empty,
+		empty
+	))",
 	(
 		.source.entries[0] |
 		@sh "gitRepo=\(.GitRepo)",
@@ -34,12 +42,12 @@ shell="$(jq -L"$BASHBREW_META_SCRIPTS" --slurp --raw-output '
 ')"
 eval "$shell"
 [ -n "$buildObj" ]
+[ -n "$firstTag" ]
 [ -n "$gitRepo" ]
 [ -n "$gitFetch" ]
 [ -n "$gitCommit" ]
 [ -n "$gitArchive" ]
 [ -n "$file" ]
-export buildObj
 
 # "bashbrew fetch" but in Bash (because we have bashbrew, but not the library file -- we could synthesize a library file instead, but six of one half a dozen of another and this avoids the explicit hard bashbrew dependency)
 
@@ -152,6 +160,9 @@ jq -L"$BASHBREW_META_SCRIPTS" --null-input --tab '
 			mediaType: env.mediaType,
 			digest: env.digest,
 			size: (env.size | tonumber),
+			annotations: {
+				"org.opencontainers.image.ref.name": env.firstTag,
+			},
 		} ],
 	}
 	| normalize_manifest
