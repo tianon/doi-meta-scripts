@@ -63,8 +63,18 @@ node('put-shared') { ansiColor('xterm') {
 
 				jq -L.scripts --tab '
 					include "deploy";
-					arch_tagged_manifests(env.BASHBREW_ARCH)
-					| deploy_objects
+					arch_filter_builds(env.BASHBREW_ARCH)
+					| (
+						deploy_signatures(
+							empty; # TODO env.BASHBREW_REFERRERS_REPO; # does this need to be a separate job?
+							.source.arches[.build.arch].archTags
+						),
+						(
+							arch_tagged_manifests
+							| tagged_deploy_objects
+						),
+						empty
+					)
 				' builds.json > deploy.json
 			'''
 		}

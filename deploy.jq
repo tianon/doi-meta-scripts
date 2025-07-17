@@ -1,9 +1,18 @@
 include "oci";
 
 # input: array of "build" objects (with "buildId" top level keys)
+# output: array of "build" objects (with "buildId" top level keys) filtered by "builds_selector"
+def filter_builds(builds_selector):
+	map_values(select(builds_selector))
+;
+def arch_filter_builds($arch):
+	filter_builds(.build.arch == $arch)
+;
+
+# input: array of "build" objects (with "buildId" top level keys), possibly filtered by filter_builds
 # output: map of { "tag": [ list of OCI descriptors ], ... }
-def tagged_manifests(builds_selector; tags_extractor):
-	reduce (.[] | select(.build.resolved and builds_selector)) as $i ({};
+def tagged_manifests(tags_extractor):
+	reduce (.[] | select(.build.resolved)) as $i ({};
 		.[
 			$i
 			| tags_extractor
@@ -19,13 +28,13 @@ def tagged_manifests(builds_selector; tags_extractor):
 		]
 	)
 ;
-def arch_tagged_manifests($arch):
-	tagged_manifests(.build.arch == $arch; .source.arches[.build.arch].archTags)
+def arch_tagged_manifests:
+	tagged_manifests(.source.arches[.build.arch].archTags)
 ;
 
 # input: output of tagged_manifests (map of tag -> list of OCI descriptors)
 # output: stream of input objects for "cmd/deploy" ({ "type": "manifest", "refs": [ ... ], "data": { ... } })
-def deploy_objects:
+def tagged_deploy_objects:
 	reduce to_entries[] as $in ({};
 		$in.key as $ref
 		| (
@@ -76,4 +85,38 @@ def deploy_objects:
 		)
 	)
 	| .[] # strip off our synthetic map keys to avoid leaking our implementation detail
+;
+
+# input: array of "build" objects (with "buildId" top level keys)
+# output: stream of input objects for "cmd/deploy" ({ "type": "manifest", "refs": [ ... ], "data": { ... } })
+# cosignRepos: repositories to push :sha256-xxx.sig tags to, such as "oisupport/referrers"
+# pushByDigestRepos: repositories to push @sha256:xxx manifests to (OCI referrers API lookup only), such as "arm64v8/hello-world" ([ .source.arches[.build.arch].archTags[] | split(":")[0] ])
+def deploy_signatures(cosignRepos; pushByDigestRepos):
+	.[]
+	| select(.build.resolved)
+	| . as $build
+	# TODO strip any tags off these values here instead of having the invoker do that (so this can just be an indiscriminte list of refs that we munge as appropriate) -- then we can handle the stripping in a way that's more careful about the colons in digests and port numbers 😂
+	| ([ cosignRepos ] | flatten | unique) as $cosignRepos
+	| ([ pushByDigestRepos ] | flatten | unique) as $pushByDigestRepos
+	| .build.prodSignatures[]?
+	| .annotations["vnd.docker.reference.digest"] as $subjectDigest
+	| {
+		type: "manifest",
+		refs: [
+			"\($cosignRepos[]):\($subjectDigest | gsub(":"; "-")).sig",
+			$pushByDigestRepos[],
+			empty
+		],
+		lookup: { (.digest): $build.build.img },
+		data: {
+			# TODO this is replicating a lot of stuff from "sign-image.sh" that should be factored out into a shared file
+			schemaVersion: 2,
+			mediaType: media_type_oci_image,
+			artifactType: media_type_cosign_artifact,
+			subject: first($build.build.resolved.manifests[] | select(.digest == $subjectDigest)),
+			layers: [ . ], # TODO this is missing the "data" field because we didn't include it in the JSON (there's a matching TODO over in "./cmd/builds") -- something to ponder for the future
+			# TODO if we ever end up with multiple *different* signatures for the same $subjectDigest, that's not a thing that Tianon is aware of cosign having any support for, but it would be pretty reasonable to make them multiple layers in the same manifest (since it doesn't support indexes AFAIK and those would be harder for us to generate here anyways)
+			config: oci_empty_descriptor,
+		},
+	}
 ;
