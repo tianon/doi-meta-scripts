@@ -24,7 +24,7 @@ def arch_tagged_manifests($arch):
 ;
 
 # input: output of tagged_manifests (map of tag -> list of OCI descriptors)
-# output: array of input objects for "cmd/deploy" ({ "type": "manifest", "refs": [ ... ], "data": { ... } })
+# output: stream of input objects for "cmd/deploy" ({ "type": "manifest", "refs": [ ... ], "data": { ... } })
 def deploy_objects:
 	reduce to_entries[] as $in ({};
 		$in.key as $ref
@@ -75,5 +75,5 @@ def deploy_objects:
 			end
 		)
 	)
-	| [ .[] ] # strip off our synthetic map keys to avoid leaking our implementation detail
+	| .[] # strip off our synthetic map keys to avoid leaking our implementation detail
 ;

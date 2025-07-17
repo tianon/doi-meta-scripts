@@ -64,7 +64,7 @@ node('put-shared') { ansiColor('xterm') {
 				jq -L.scripts --tab '
 					include "deploy";
 					arch_tagged_manifests(env.BASHBREW_ARCH)
-					| deploy_objects[]
+					| deploy_objects
 				' builds.json > deploy.json
 			'''
 		}
