@@ -49,6 +49,10 @@ func readJSONHelper(r ociregistry.BlobReader, v interface{}) error {
 			return fmt.Errorf("unexpected non-whitespace at the end of %q: %+v\n", string(desc.Digest), rune(b))
 		}
 	}
+	// ... and if we're reading into a "json.RawMessage", we clearly wanted the raw object verbatim, so let's throw that whitespace on the end of it
+	if raw, ok := v.(*json.RawMessage); ok {
+		*raw = append(*raw, bs...)
+	}
 
 	// now that we know we've read everything, we're safe to close the original reader
 	if err := r.Close(); err != nil {
