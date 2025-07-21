@@ -19,6 +19,10 @@ def build_should_sign:
 	# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
 	.source.entries[0].Builder != "classic"
 	and (.build.arch | startswith("windows-") | not)
+	and (
+		env.BASHBREW_META_SCRIPTS_RUNNING_TESTS == "vigorously"
+		and (input_filename | contains("/oci-import/") | not)
+	)
 ;
 
 # input: "build" object (with "buildId" top level key)
