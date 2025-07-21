@@ -16,7 +16,9 @@ def build_should_sbom:
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sign:
-	any(.source.arches[.build.arch].tags[]; IN("tianon/test:doi-sign") or startswith("tianon/gosu:"))
+	# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
+	.source.entries[0].Builder != "classic"
+	and (.build.arch | startswith("windows-") | not)
 ;
 
 # input: "build" object (with "buildId" top level key)
@@ -24,7 +26,6 @@ def build_should_sign:
 # - might (likely) have extraneous whitespace that should be trimmed/ignored for valid PEM parsing
 # - empty object or empty string means "no signature" should be considered valid
 def build_arch_sign_public_keys:
-	# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
 	if build_should_sign then
 		{
 			"YubiKey 4239413 Slot 82": "
