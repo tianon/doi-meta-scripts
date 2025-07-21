@@ -16,7 +16,7 @@ def build_should_sbom:
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sign:
-	any(.source.arches[.build.arch].tags[]; IN("tianon/test:doi-sign"))
+	any(.source.arches[.build.arch].tags[]; IN("tianon/test:doi-sign") or startswith("tianon/gosu:"))
 ;
 
 # input: "build" object (with "buildId" top level key)
@@ -33,6 +33,7 @@ def build_arch_sign_public_keys:
 				dD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==
 				-----END PUBLIC KEY-----
 			",
+			"unsigned": "", # don't immediately rebuild everything
 		}
 	else {} end
 ;
