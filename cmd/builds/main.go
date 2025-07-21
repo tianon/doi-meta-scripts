@@ -525,8 +525,7 @@ func main() {
 				if err != nil {
 					panic(err)
 				}
-				buildIDJSON = append(buildIDJSON, byte('\n')) // previous calculation of buildId included a newline in the JSON, so this preserves compatibility
-				// TODO if we ever have a bigger "buildId break" event (like adding major base images that force the whole tree to rebuild), we should probably ditch this newline
+				buildIDJSON = append(buildIDJSON, byte('\n')) // previous calculation of buildId included a newline in the JSON, so this preserves compatibility (it's also easier to add a newline than it is to remove it in some languages like Bash/Shell, so it's harmless and even safer to leave it in long-term)
 
 				build.BuildID = fmt.Sprintf("%x", sha256.Sum256(buildIDJSON))
 				fmt.Fprintf(os.Stderr, "%s (%s) -> %s [%s]\n", source.SourceID, source.Arches[build.Build.Arch].Tags[0], build.BuildID, build.Build.Arch)
