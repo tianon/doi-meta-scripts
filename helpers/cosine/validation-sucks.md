@@ -24,3 +24,11 @@
 - https://docs.styra.com/das/systems/kubernetes/cosign looks like *something*, but Styra ("from the people who made OPA") seems like a paid platform so this is probably moot/DOA
   - seems mostly comparable to sigstore/policy-controller in functionality, although slightly less
   - no obvious ability to write complex custom policies
+
+- https://kyverno.io/ seems like the most credible answer
+  - Random Redditors agree, Kyverno is the most flexible answer, Gatekeeper is the only other possible answer (and the latter is basically useless out-of-the-box)
+  - uses a wild YAML-based syntax instead of a DSL, which seems it was supposed to make policy easier to write, but IME just makes it harder to read (because complex policy still ends up in "CEL" but now it's embedded inside YAML)
+  - https://kyverno.io/docs/policy-types/image-validating-policy/
+  - https://kyverno.io/policies/other/verify-image/verify-image/
+  - https://kyverno.io/policies/other/require-vulnerability-scan/require-vulnerability-scan/
+  - https://kyverno.io/policies/other/require-base-image/require-base-image/
