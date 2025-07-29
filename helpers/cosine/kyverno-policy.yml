@@ -1,9 +1,10 @@
 #
 # product notes for Kyverno: (TODO file issues or something?)
 #
+# - index.docker.io is not and has not been canonical for 8+ years - that should be normalized to "docker.io"
 # - that "allImages" variable should be automatic somehow because otherwise every ImageValidatingPolicy has to duplicate it (and extend it over time as new "containers" type objects get added to the relevant k8s specs)
 # - traversing image indexes automatically and validating *all* entries should be an automatic / high-level supported thing (otherwise doing things like validating "config" properties is less secure than it should be because it'll only validate linux/amd64 and linux/arm64 might not pass the policy AND might be the image actually deployed by kubelet)
-# - index.docker.io is not and has not been canonical for 8+ years - that should be normalized to "docker.io"
+# - as written, this assumes *all* image references will be "image indexes" and it's actually kind of difficult to make it generic and have it work for non-indexes too - relevent to the above, there should be an easy way to do that (essentially to have an ImageValidatingPolicy that validates every "image manifest" that's part of *any* image reference in the k8s spec)
 # - documentation for "attestors.cosign.source" incorrectly claims it's a filter, when it's where to look up the signatures from
 # - the "disable ctlog" functionality leaves a lot to be desired
 #   - the "ignore" flags are implemented as "perform the validation but then ignore the result" which is wild
