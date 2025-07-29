@@ -1,0 +1,50 @@
+apiVersion: policies.kyverno.io/v1alpha1
+kind: ImageValidatingPolicy
+metadata:
+  name: example-doi-policy
+spec:
+  matchImageReferences:
+    # ideally we'd not have this extra star at the start and just use "docker.io/library/*" but Kyverno is a little confused and normalizes docker.io to "index.docker.io" instead which hasn't been correct/canonical for at least 8 years 🙈
+    - glob: "*docker.io/tianon/*"
+  attestors:
+    - name: cosignTianon
+      cosign:
+        source:
+          repository: tianon/referrers
+        key:
+          data: |
+            -----BEGIN PUBLIC KEY-----
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECMVnSOJPIb1BXkEn6Y9ni2+ZMVVa
+            /vcQmVUl4YwN6qoJPu0zGi100HVIzi44f4nt5xbVnDQTzlXjw8R0mOGL0A==
+            -----END PUBLIC KEY-----
+        ctlog:
+          insecureIgnoreTlog: true
+          insecureIgnoreSCT: true
+          # there's a nasty little bug in Kyverno where it assumes that if this object has contents, that they specify an alternate server, even though the flags for "don't Rekor at all" live inside this object too 😞
+          # https://github.com/kyverno/kyverno/blob/b9e2c3f77d6de1d9e19dd5837d1b610fa9483d0c/pkg/imageverification/imageverifiers/cosign/opts.go#L217
+          # so, we have to specify a rekor URL that will get queried and then the results of ignored, because that's how the Kyverno implementation works
+          # in fact, the image verifications happen *faster* if this value is invalid because the Rekor validation fails faster (and then the failure gets ignored)
+          url: https://this.is.a.totally.bogus.domain.that.should.not.exist/
+  variables:
+    - name: allImages
+      expression: |
+        images.containers
+        + images.?initContainers.orValue([])
+        + images.?ephemeralContainers.orValue([])
+  validations:
+    - expression: |
+        variables.allImages.all(ref,
+          [ image(ref) ].all(img,
+            [ image.GetMetadata(ref) ].all(meta,
+              meta.imageIndex.manifests.filter(desc,
+                desc.platform.os == "linux" // windows images and buildkit attestations are not (currently) signed
+              ).all(desc,
+                verifyImageSignatures(
+                  img.registry() + "/" + img.repository() + "@" + desc.digest,
+                  [ attestors.cosignTianon ]
+                ) > 0
+                // TODO find some way to raise *which* image fails, because this is otherwise just pass/fail on the entire k8s pod spec 😭
+              )
+            )
+          )
+        )
