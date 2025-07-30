@@ -20,7 +20,7 @@ func readJSONHelper(r ociregistry.BlobReader, v interface{}) error {
 		return err
 	}
 
-	// if desc.Data != nil, this would be the appropriate place to validate/use it, but we already have a reader that's providing the data in a stream so the heavy parts of creating that reader are already done and we don't save much (anything?) by throwing that away and using the data field instead
+	// if desc.Data != nil, this would be the appropriate place to validate/use it, but we already have a reader that's providing the data in a stream so the heavy parts of creating that reader are already done and we don't save much (anything?) by throwing that away and using the data field instead (unless the object is so big that draining the reader is actually expensive or time consuming, but those are exactly the types of objects for which the data field *won't* be embedded 😂)
 
 	// make sure we can't possibly read (much) more than we're supposed to
 	limited := &io.LimitedReader{

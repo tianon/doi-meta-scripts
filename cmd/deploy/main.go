@@ -125,6 +125,8 @@ func main() {
 
 			necessaryReadLockRefs := []registry.Reference{}
 
+			// TODO handle "subject" references sanely too somehow (ie, if we see a "subject"-having object in the deploy list before the object it's a subject for, we should hold onto a lock to make sure the referrer is pushed before the manifest it's referrering to)
+
 			// before parallelization, collect the pushing "child" mutex we need to lock for writing right away (but only for the first entry)
 			var mutex *sync.RWMutex
 			if ref.Digest != "" {

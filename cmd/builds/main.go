@@ -683,11 +683,10 @@ func main() {
 								registry.AnnotationCosignSignature:         prodSignature,
 								registry.AnnotationBuildkitReferenceDigest: string(signaturePayload.ManifestDigest),
 							},
-							// TODO ? (we can copy this object from the ".build.img" repo so we don't need it here too unless we actually want/need to sign something different here than we did during build, and it's non-trivial in size when we have thousands of them) -- Data: signaturePayload.Raw,
+							// TODO Data: signaturePayload.Raw, ? we can copy this object from the ".build.img" repo so we don't need it here too unless we actually want/need to sign something different here than we did during build, and it's non-trivial in size when we have thousands of them, but it would *also* mean we could embed the data fields in the signature manifests themselves which could help cut down on lookups for consumers
 						})
 					}
 				}
-				// TODO now that I have this all mostly written and working, I realize it could actually be a fully separate process that surgically filters/hacks up builds.json (and cache-builds.json) but I need to figure out how I'm going to actually push/share the prod signatures
 
 				build.BonusData = nil
 				json, err := json.Marshal(&build)

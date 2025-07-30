@@ -341,6 +341,9 @@ def validate_oci_image($opt):
 		else . end
 	)
 	| if $opt.imageCosign then
+		# TODO figure out whether "multiple layers" / "multiple signatures" is supported by cosign
+		# TODO validate that the layer has the necessary "signature" annotation and that it's valid base64 (we could potentially go slightly further and somehow validate that it looks like it's probably valid ASN1 content inside, but that's harder given the "binary data" nature of it)
+		# TODO we could *also* go deeper here and have the wrapper validate the actual payload structure (required vs optional, type value, etc)
 		validate_length(.layers; 1)
 	else . end # TODO should we validate that imageAttestation has to have 1+ layers?  regular images?
 	| validate(.layers[];

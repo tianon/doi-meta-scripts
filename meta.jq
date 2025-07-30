@@ -289,7 +289,7 @@ def build_command:
 				| join(" \\\n\t")
 			),
 
-			# TODO build_should_sbom ± build_should_sign (both rely on OCI layout, which this doesn't provide, and the former canot easily work on Windows, the latter's Windows-ability is TBD but necessary to figure out)
+			# TODO build_should_sbom ± build_should_sign (both rely on OCI layout, which this doesn't provide; the former cannot really work on Windows AFAIK and the latter's Windows-ability is TBD but probably necessary to figure out eventually)
 
 			empty
 		] | join("\n")
