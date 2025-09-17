@@ -162,10 +162,10 @@ node(nodeExpression) { ansiColor('xterm') {
 					def signingCredentials = []
 					if (obj.doSign) {
 						if (env.YUBECDSA_SLOT) {
-							// if a given node has a yubikey it should use for signing, it should have a "YUBECDSA_SLOT" environment variable set in the Jenkins Node configuration to signal that (and then a corresponding "signing-yubikey-NODE_NAME" Jenkins credential should exist in an appropriate scope)
+							// if a given node has a yubikey it should use for signing, it should have a "YUBECDSA_SLOT" environment variable set in the Jenkins Node configuration to signal that (and then a corresponding "signing-yubi-NODE_NAME" Jenkins credential should exist in an appropriate scope with the serial number as the username and the PIN as the password)
 							signingCredentials += [
 								usernamePassword(
-									credentialsId: 'signing-yubikey-' + env.NODE_NAME,
+									credentialsId: 'signing-yubi-' + env.NODE_NAME,
 									usernameVariable: 'YUBECDSA_CARD',
 									passwordVariable: 'YUBECDSA_PIN',
 								)
