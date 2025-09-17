@@ -12,8 +12,10 @@
 #   - as a side effect, specifying ignore only works if the URL is specified explicitly also (which then slows down the verification unless the URL is obviously invalid and thus fails before performing *any* validation)
 #   - the "TUF" parts still happen, even though they don't need to / shouldn't (wasting time and resources)
 # - when writing a complex CEL expression like this one, there's no way I can find to "raise" a better error message on policy failure (so that it can be specific about what/where it failed, for example) - it's just strictly pass or fail
+#   - related, the debugging/development experience is pretty poor - if something fails, it's hard to figure out why (no feedback loop)
 # - cosign signatures are signatures of a "payload" JSON object that has a bunch of interesting properties (and an infinite number of optional user-specified properties) - it would be really helpful if the policy could access those somehow to validate them too, after validating the signature
 #   - see https://oci.dag.dev/?blob=tianon/referrers@sha256:d6d92cd099663f2136b56525de46efc7ea99b2f8b468b458349e3bf4cf92ff99&mt=application%2Fvnd.dev.cosign.simplesigning.v1%2Bjson&size=1297 for an example
+# - support for cosign signatures via referrers ("experimental OCI 1.1 support" as cosign calls it)
 
 apiVersion: policies.kyverno.io/v1alpha1
 kind: ImageValidatingPolicy
