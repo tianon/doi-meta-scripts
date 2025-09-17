@@ -44,11 +44,15 @@
 
 - self-generated provenance (SLSA? 🙃) + decide what to do with BuildKit's (especially since we will *not* be signing SBOMs)
 
-- actual OCI referrers (pending Docker Hub enablement, obviously)
-  - we've already structured the objects so this is ~easy (they have an appropriate `subject`), but they'll need to be pushed-by-digest to `library/` and the arch-specific namespaces for this to work, which is also ~easy but not worth doing unless/until Hub enables referrers
+- actual OCI referrers ~~(pending Docker Hub enablement, obviously)~~
+  - we've already structured the objects so this is ~easy (they have an appropriate `subject`), but they'll need to be pushed-by-digest to `library/` and the arch-specific namespaces for this to work, which is also ~easy ~~but not worth doing unless/until Hub enables referrers~~
+  - ... in hindsight, this is actually *easier* than pushing to a dedicated "referrers" repository since our deploy pushing user already has push access to the arch-specific namespaces 🤔
 
 - enforcing ordering for signature upload (ie, signature *must* be uploaded and available for lookup before we push the relevant manifests to production repositories like the arch-specific namespaces or `library/`)
+  - this probably exhibits as updating "deploy" such that if it sees an object with a "subject" that it makes sure that is pushed successfully before allowing any pointer with that subject digest to consider pushing (this might be hard because the subject lives inside the index we're pushing and we need to block the index/child push), and making sure we list then in the appropriate order during deploy
 
 - upstream signatures?  `oci-import` is the only place this makes sense, and the benefits are dubious (we wouldn't reproduce that upstream signature as-is *unless* the testing mentioned above allows multiple signatures sanely)
 
 - sign "classic" builds / Windows images too (unfortunately probably requires something like https://github.com/tianon/docker-bin/blob/aef2b35350eabe4748dddda3ccc0ddf02ad1526e/docker-save-oci-layout.sh which is more expensive the bigger images get, like the huge Windows ones 😞)
+  - maybe, someday, we can get the containerd integration and have some way to get an OCI bundle that *doesn't* include those base image layers?  but then we still need to push them somehow 🤔
+  - (assuming containerd integration *and* support for it,) push-by-digest, then sign from the locally-generated digest, then push a tag?
