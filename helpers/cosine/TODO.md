@@ -3,13 +3,14 @@
 - documentation (especially validation: `helpers/cosine/kyverno-policy.yml`), blog post?
   - `helpers/cosine/notes.md` but more focused and having learned from the actual implementation, where that details more of what my plan was, which is close but not 100%
 
-- referrers deploy (see TODO in `Jenkinsfile.deploy`)
+- dedicated referrers repo deploy (see TODO in `Jenkinsfile.deploy`)
 
 - `git rm -r helpers/cosine` (moving/rewriting any useful notes or scripts somewhere more persistent)
 
 - more testing with actual AWS KMS
+  - confidence is high, so maybe this exhibits as just enabling it for arm32 to start with 🤷
 
-- a bucketload of Terraform
+- a ~~bucketload~~ thimble of Terraform (and a pretzel of AWS IAM / policy)
 
 # Probably Important
 
