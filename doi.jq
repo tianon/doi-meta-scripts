@@ -176,12 +176,15 @@ def build_arch_sign_public_keys:
 	# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
 	{
 		"mips64le": {
+			"unsigned": "", # don't immediately rebuild everything
+
 			"mips64le (primary) yubi 31992878 9c": "
 				-----BEGIN PUBLIC KEY-----
 				MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdAxMzxIpv1AMbzE+ycjyq4/VxQKh
 				po/toKqH2ULTNVr41ktEcyuvHxT/gNfjHLRe79XTB06UTDLYqOGvfI35vA==
 				-----END PUBLIC KEY-----
 			",
+
 			#"mips64le (backup) yubi 31992760 9c": "
 			#	-----BEGIN PUBLIC KEY-----
 			#	MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXmNFPvf/vpmOpZd0IyONAbJA0nPz
@@ -189,13 +192,17 @@ def build_arch_sign_public_keys:
 			#	-----END PUBLIC KEY-----
 			#",
 		},
+
 		"riscv64": {
+			"unsigned": "", # don't immediately rebuild everything
+
 			"riscv64 (primary) yubi 31992931 9c": "
 				-----BEGIN PUBLIC KEY-----
 				MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/3vIKIZs1mhnrthNpEqC9SBmnFFJ
 				CvEj8WWPvXB1R9xX03/MmAg8QU4FD9dnFXr+zdkJ3RqLEXovxzO03KoK9Q==
 				-----END PUBLIC KEY-----
 			",
+
 			#"riscv64 (backup) yubi 31992898 9c": "
 			#	-----BEGIN PUBLIC KEY-----
 			#	MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYCVWz7ZwW5Lu8+U2OkPS1AnBOGmo
