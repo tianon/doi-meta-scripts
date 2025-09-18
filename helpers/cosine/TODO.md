@@ -24,7 +24,9 @@
 
 - pull `normalized_builder` out of `meta.jq` so it can be used in `build_should_sign` and `build_arch_sign_public_keys` inside `system-config.jq` without creating an import cycle
 
-- file issue(s) with Kyverno with Tianon's v1alpha1 policy writing product feedback (see `helpers/cosine/kyverno-policy.yml`)
+- ~~file issue(s) with Kyverno with Tianon's v1alpha1 policy writing product feedback (see `helpers/cosine/kyverno-policy.yml`)~~
+  - https://github.com/kyverno/kyverno/discussions/14036
+
 
 - re-evaluate fields included in the payloads created in `helpers/sign-image.sh` (especially those under `optional:`)
 
