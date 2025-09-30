@@ -28,7 +28,6 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcpFvgj6wI3I4P/+VJraOzT4wtteD
 qaWjAqsKlRHM9ME++HiTw51shM2E/YYNXGIOfUHJkhiNSfuyeSBHe9J9jw==
 -----END PUBLIC KEY-----
 `,
-			err: false,
 		},
 
 		{
