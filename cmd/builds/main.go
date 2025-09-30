@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/docker-library/meta-scripts/cmd/builds/signing"
 	"github.com/docker-library/meta-scripts/om"
 	"github.com/docker-library/meta-scripts/registry"
 	"github.com/docker-library/meta-scripts/sm"
@@ -230,7 +231,7 @@ var (
 	prodPublicKey = sync.OnceValue(func() *ecdsa.PublicKey {
 		if publicKeyPEM := strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY")); publicKeyPEM != "" {
 			// we know what the public key is supposed to be, so let's validate the cached signature before using/trusting it
-			pubKey, err := parsePublicKey(publicKeyPEM)
+			pubKey, err := signing.ParsePublicKey(publicKeyPEM)
 			if err != nil {
 				// panic instead of return because this is bad CI job configuration, not bad data, so it should blow up ASAP
 				panic(fmt.Sprintf("BASHBREW_META_SIGN_PROD_PUBLIC_KEY is broken/wrong?  %v\n\n%s", err, publicKeyPEM))
@@ -247,7 +248,7 @@ func prodSignDigest(ctx context.Context, digest registry.Digest) (string, error)
 	if cache, ok := cacheSignatures[digest]; ok {
 		if pubKey := prodPublicKey(); pubKey != nil {
 			// we know what the public key is supposed to be, so let's validate the cached signature before using/trusting it
-			if valid, err := validateSignatureBase64(pubKey, digest, cache); err == nil && valid {
+			if valid, err := signing.ValidateSignatureBase64(pubKey, digest, cache); err == nil && valid {
 				signature = cache
 			}
 		} else {
@@ -266,7 +267,7 @@ func prodSignDigest(ctx context.Context, digest registry.Digest) (string, error)
 			if pubKey := prodPublicKey(); pubKey != nil {
 				// if the public key env variable is set, we should validate that what we got matches it, but only the first time (as a rough sanity check that our "sign-digest" method's output matches our configured public key)
 				verifyProdPublicKeyOnce.Do(func() {
-					if valid, err := validateSignatureBase64(pubKey, digest, signature); err != nil {
+					if valid, err := signing.ValidateSignatureBase64(pubKey, digest, signature); err != nil {
 						panic(fmt.Sprintf("error attempting to validate generated signature against BASHBREW_META_SIGN_PROD_PUBLIC_KEY: %v\n\n%s", err, strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY"))))
 					} else if !valid {
 						panic(fmt.Sprintf("the output of `sign-digest.sh` doesn't match the configured BASHBREW_META_SIGN_PROD_PUBLIC_KEY! 😬\n\ndigest: %s\nsignature: %s\npublic key:\n\n%s", digest, signature, strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY"))))
@@ -579,13 +580,13 @@ func main() {
 							// (but we continue instead of break because a later key might be the explicitly empty "unsigned is fine" case above)
 						}
 
-						pubKey, err := parsePublicKey(key.PEM)
+						pubKey, err := signing.ParsePublicKey(key.PEM)
 						if err != nil {
 							panic(err)
 						}
 
 						for _, signature := range signatures {
-							if valid, err := validateSignature(pubKey, signature.Digest, signature.Signature); err != nil {
+							if valid, err := signing.ValidateSignature(pubKey, signature.Digest, signature.Signature); err != nil {
 								// TODO this should probably just be treated like a "bad" signature (and thus cause the image to be considered invalid)
 								panic(err)
 							} else if !valid {
