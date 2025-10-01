@@ -13,7 +13,7 @@ func TestParsePublicKey(t *testing.T) {
 		err   bool
 	}{
 		{
-			name: "valid key",
+			name:  "valid key",
 			input: testPublicKey,
 		},
 
