@@ -52,6 +52,7 @@ func CosignSignatures(ctx context.Context, index *ocispec.Index) ([]CosignedPayl
 		}
 		r := descriptorDataReader(manifestDesc)
 		if r == nil {
+			// TODO if manifestDesc has AnnotationRefName, should we fetch from there instead?  as a fallback?
 			ref.Digest = manifestDesc.Digest
 			r, err = Lookup(ctx, ref, nil)
 			if err != nil {

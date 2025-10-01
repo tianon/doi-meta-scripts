@@ -15,6 +15,7 @@ func isDescriptorDataValid(desc ociregistry.Descriptor) bool {
 
 // if the given descriptor's "data" field is valid, returns a new [ociregistry.BlobReader], otherwise returns nil
 func descriptorDataReader(desc ociregistry.Descriptor) ociregistry.BlobReader {
+	// if desc.Data == nil && desc.Size == 0, we could upgrade desc.Data to be []byte{} here, but that's not something any of our real actual images will have so it's not worth the added lines (and Tianon has added this comment for Future Tianon's sake - don't do it, friend!)
 	if isDescriptorDataValid(desc) {
 		return ocimem.NewBytesReader(desc.Data, desc)
 	}

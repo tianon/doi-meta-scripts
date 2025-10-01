@@ -495,14 +495,37 @@ func main() {
 					panic(err)
 				}
 
-				// if we have any signatures on this build, we need to validate them (and throw out the image / treat it as 404 if the signature is invalid/wrong)
-				signatures, err := registry.CosignSignatures(ctx, build.Build.Resolved)
-				if err != nil {
-					// TODO most errors here probably just mean we should treat it like bad signatures, but not 100%, so we need to sort through that instead of just bailing ("panic: illegal base64 data at input byte 4" for example is clearly "badsig", but failures to fetch objects from the registry should explode instead)
-					panic(err)
+				if build.Build.Resolved != nil {
+					// explicitly clear out the annotations we'll use to record "signed by" information (so they can't possibly leak in from anywhere and we can rely on "if they're set here, we set them after verification")
+					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
+					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
 				}
 
-				// if we have *any* signatures, we need to validate that every object in Manifests that we might *want* to sign has a corresponding entry
+				// if build.BonusData.ArchSignKeys (ie, the output of "build_arch_sign_public_keys") is a completely empty object, we don't care about signatures at all and should treat every incoming image as unsigned, but if it's got *any* keys then we treat it as authoritative for the valid states of signatures on this image
+				// ie, {} + signed image == fine
+				// but, {"unsigned is fine":""} + signed image == invalid, image to be ignored
+				var signatures []registry.CosignedPayload
+				if len(build.BonusData.ArchSignKeys) > 0 {
+					// if we have any signatures on this build, we need to validate them (and throw out the image / treat it as 404 if the signature is invalid/wrong)
+					signatures, err = registry.CosignSignatures(ctx, build.Build.Resolved)
+					if err != nil {
+						// TODO most errors here probably just mean we should treat it like bad signatures, but not 100%, so we need to sort through that instead of just bailing ("panic: illegal base64 data at input byte 4" for example is clearly "badsig", but failures to fetch objects from the registry should explode instead)
+						panic(err)
+					}
+				} else if build.Build.Resolved != nil {
+					// since we're explicitly ignoring any signatures, we should remove them from the result we embed in the JSON
+					i := 0 // https://go.dev/wiki/SliceTricks#filter-in-place (used to delete references that don't belong to the selected architecture)
+					for _, m := range build.Build.Resolved.Manifests {
+						if m.ArtifactType == registry.ArtifactTypeCosignSignature {
+							continue
+						}
+						build.Build.Resolved.Manifests[i] = m
+						i++
+					}
+					build.Build.Resolved.Manifests = build.Build.Resolved.Manifests[:i] // https://go.dev/wiki/SliceTricks#filter-in-place
+				}
+
+				// if we have *any* signatures now, we need to validate that every object in Manifests that we might *want* to sign has a corresponding signature
 				missingSignatures := false
 				if len(signatures) > 0 {
 					expectedSignatureCount := 0
@@ -547,12 +570,6 @@ func main() {
 					if !missingSignatures && len(signatures) != expectedSignatureCount {
 						panic(fmt.Sprintf("too *many* signatures?? have %d vs %d expected", len(signatures), expectedSignatureCount))
 					}
-				}
-
-				if build.Build.Resolved != nil {
-					// explicitly clear out the annotations we'll use to record "signed by" information (so they can't possibly leak in from anywhere and we can rely on "if they're set here, we set them after verification")
-					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
-					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
 				}
 
 				// if we have no signatures and no keys to validate against, we're "valid" already (otherwise we have to dig deeper to know)

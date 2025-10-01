@@ -16,6 +16,10 @@ export BASHBREW_ARCH_NAMESPACES='
 '
 export BASHBREW_STAGING_TEMPLATE='oisupport/staging-ARCH:BUILD'
 
+# some bits of code need to detect that we're running tests, so we'll set a sentinel value to let them do so reliably
+export BASHBREW_META_SCRIPTS_RUNNING_TESTS='vigorously'
+# (with a value that's basically never going to be set accidentally, but is still easy/small to test for)
+
 dir="$(dirname "$BASH_SOURCE")"
 dir="$(readlink -ve "$dir")"
 export BASHBREW_LIBRARY="$dir/library"
@@ -71,6 +75,8 @@ coverage="$dir/.coverage"
 rm -rf "$coverage/GOCOVERDIR" "$coverage/bin"
 mkdir -p "$coverage/GOCOVERDIR" "$coverage/bin"
 export GOCOVERDIR="${GOCOVERDIR:-"$coverage/GOCOVERDIR"}"
+
+# TODO explicitly delete the "signatures" cache here (which will be regenerated and then used in the second run, giving us better test coverage)
 
 time "$coverage/builds.sh" --cache "$dir/cache-builds.json" "$dir/sources.json" > "$dir/builds.json"
 [ -s "$coverage/bin/builds" ] # just to make sure it actually did build/use an appropriate binary 🙈
