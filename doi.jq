@@ -176,7 +176,21 @@ def _in_integration_tests: env.BASHBREW_META_SCRIPTS_RUNNING_TESTS == "vigorousl
 # - empty object or empty string means "no signature" should be considered valid
 def build_arch_sign_public_keys:
 	if _in_integration_tests then
-		{}
+		if .build.arch == "amd64" and IN(.source.arches[].tags[]; "infosiftr-moby:amd64") then
+			{
+				"Tianon's arch-specific image signing key": "
+					-----BEGIN PUBLIC KEY-----
+					MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEG+1HMsDDAFXQrPkPi80/P4XmMsWJ
+					dD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==
+					-----END PUBLIC KEY-----
+				",
+			}
+		elif .build.arch == "amd64" and IN(.source.arches[].tags[]; "notary:server") then
+			# give us a test where we know the image isn't signed (won't be signed!), but we also explicitly validate that it's not 👀
+			{ "unsigned": "" }
+		else
+			{}
+		end
 	else
 		# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
 		{

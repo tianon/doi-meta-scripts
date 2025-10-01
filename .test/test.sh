@@ -76,12 +76,20 @@ rm -rf "$coverage/GOCOVERDIR" "$coverage/bin"
 mkdir -p "$coverage/GOCOVERDIR" "$coverage/bin"
 export GOCOVERDIR="${GOCOVERDIR:-"$coverage/GOCOVERDIR"}"
 
-# TODO explicitly delete the "signatures" cache here (which will be regenerated and then used in the second run, giving us better test coverage)
+# explicitly invalidate the "signatures" cache (which will be regenerated and then used in the second run, giving us better test coverage)
+jq --tab '.signatures[] |= "dGlhbm9uIGlzIHdyaXRpbmcgdGVzdHMsIGFuZCBoZSBoYXRlcyB0aGF0LCBidXQgaXQgbXVzdCBuZWVkcyBiZSBkb25lIEZPUiBUSEUgQ09WRVJBR0Ug8J+YrfCfkpYK"' "$dir/cache-builds.json" > "$dir/cache-builds.json.new"
+mv -f "$dir/cache-builds.json.new" "$dir/cache-builds.json"
+
+# load up the "production" (integration tests) signing key so we can hit those codepaths too
+# (without this, the code can't/won't even catch the invalid signature above 😅😂)
+BASHBREW_META_SIGN_PROD_PUBLIC_KEY="$(< "$BASHBREW_META_SCRIPTS/cmd/builds/signing/testdata/test.pub")"
+export BASHBREW_META_SIGN_PROD_PUBLIC_KEY
 
 time "$coverage/builds.sh" --cache "$dir/cache-builds.json" "$dir/sources.json" > "$dir/builds.json"
 [ -s "$coverage/bin/builds" ] # just to make sure it actually did build/use an appropriate binary 🙈
 
 # test again, but with "--cache=..." instead of "--cache ..." (which also lets us delete the cache and get slightly better coverage reports at the expense of speed / Hub requests)
+unset BASHBREW_META_SIGN_PROD_PUBLIC_KEY # also without the public key, so we hit the cache-only codepaths too 👀
 time "$coverage/builds.sh" --cache="$dir/cache-builds.json" "$dir/sources.json" > "$dir/builds.json"
 
 # test "lookup" code for more edge cases

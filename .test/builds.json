@@ -5266,9 +5266,26 @@
 							"architecture": "unknown",
 							"os": "unknown"
 						}
+					},
+					{
+						"mediaType": "application/vnd.oci.image.manifest.v1+json",
+						"digest": "sha256:fb9b4935f3d6cae9726b666f16deaef208b3c054a23377ed70d4dfe9c6448676",
+						"size": 3382,
+						"annotations": {
+							"com.docker.official-images.bashbrew.arch": "amd64",
+							"org.opencontainers.image.ref.name": "tianon/zz-staging:amd64-8526e497f7152035b55ad60dcf4127bb83706b14cdc7f2ea970b67bfd67c1e66@sha256:fb9b4935f3d6cae9726b666f16deaef208b3c054a23377ed70d4dfe9c6448676",
+							"vnd.docker.reference.digest": "sha256:6aaf708ec04bac2b57a998fd5c23d7b12f6f5324d6de4587cbf939c5e5c3edb8"
+						},
+						"platform": {
+							"architecture": "unknown",
+							"os": "unknown"
+						},
+						"artifactType": "application/vnd.dev.cosign.artifact.sig.v1+json"
 					}
 				],
 				"annotations": {
+					"com.docker.official-images.bashbrew.signed-by.label": "Tianon's arch-specific image signing key",
+					"com.docker.official-images.bashbrew.signed-by.pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEG+1HMsDDAFXQrPkPi80/P4XmMsWJ\ndD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==\n-----END PUBLIC KEY-----",
 					"org.opencontainers.image.ref.name": "tianon/zz-staging:amd64-8526e497f7152035b55ad60dcf4127bb83706b14cdc7f2ea970b67bfd67c1e66@sha256:5ea58303ed75af89b59ad87631987546839db711eeb0dd7449f46604b9ccc1ab"
 				}
 			},
@@ -5321,7 +5338,18 @@
 						"org.opencontainers.image.ref.name": "debian@sha256:1caf1c703c8f7e15dcf2e7769b35000c764e6f50e4d7401c355fb0248f3ddfdb"
 					}
 				}
-			}
+			},
+			"prodSignatures": [
+				{
+					"mediaType": "application/vnd.dev.cosign.simplesigning.v1+json",
+					"digest": "sha256:1c21574ddd9735be594e618981f98103969196c827aee0395c0233be019a33d6",
+					"size": 1308,
+					"annotations": {
+						"dev.cosignproject.cosign/signature": "MEYCIQCzO9X6BJ70TYnVpdHfCgyIUYpQjSNbx6LdvUS5I6xA7gIhANkJPJeZjRGX9yDWrzA9xm3I9c0wrB0Qx/aMJLPeJi/y",
+						"vnd.docker.reference.digest": "sha256:6aaf708ec04bac2b57a998fd5c23d7b12f6f5324d6de4587cbf939c5e5c3edb8"
+					}
+				}
+			]
 		},
 		"source": {
 			"sourceId": "2375f8f63ebc06e8158722d39d4ae8942278ed6ecb68f3d7e035b44f79e73164",
