@@ -19,10 +19,6 @@
 
 - better logging in `cmds/builds`, especially around BADSIG cases
 
-- more of the signing code in a library / with better testing (especially unit tests)
-  - the Go code is somewhat straightforward
-  - the Bash might need something like a unit test implementation in `helpers/sign-digest.sh` that can run deterministically and "fake" the signatures, possibly with an extremely limited set of digests so that code can't possibly get triggered in production without causing obvious errors/failure
-
 - pull `normalized_builder` out of `meta.jq` so it can be used in `build_should_sign` and `build_arch_sign_public_keys` inside `system-config.jq` without creating an import cycle
 
 - ~~file issue(s) with Kyverno with Tianon's v1alpha1 policy writing product feedback (see `helpers/cosine/kyverno-policy.yml`)~~
@@ -42,6 +38,11 @@
 - pull `normalize_ref_to_docker` out of `meta.jq` so it can be used in `helpers/sign-image.sh`
 
 - handle multiple signatures of the same object cleanly (and test whether `cosign` handles that in any sane way - multiple signature objects inside `layers` for example; see TODO in `deploy.jq`)
+
+- more of the signing code in a library / with better testing (especially unit tests)
+  - ~~the Go code is somewhat straightforward~~
+  - ~~the Bash might need something like a unit test implementation in `helpers/sign-digest.sh` that can run deterministically and "fake" the signatures, possibly with an extremely limited set of digests so that code can't possibly get triggered in production without causing obvious errors/failure~~
+  - we could probably do more here, but we're in a pretty OK state now (with good coverage)
 
 # Possible Futures
 
