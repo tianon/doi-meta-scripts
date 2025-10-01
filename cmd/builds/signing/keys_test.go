@@ -6,14 +6,6 @@ import (
 	"github.com/docker-library/meta-scripts/cmd/builds/signing"
 )
 
-// generate a private key (for testing):
-//
-//   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1
-//
-// and "openssl ec -pubout" can get a public from that private:
-//
-//   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 | openssl ec -pubout
-
 func TestParsePublicKey(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -22,12 +14,7 @@ func TestParsePublicKey(t *testing.T) {
 	}{
 		{
 			name: "valid key",
-			input: `
------BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcpFvgj6wI3I4P/+VJraOzT4wtteD
-qaWjAqsKlRHM9ME++HiTw51shM2E/YYNXGIOfUHJkhiNSfuyeSBHe9J9jw==
------END PUBLIC KEY-----
-`,
+			input: testPublicKey,
 		},
 
 		{

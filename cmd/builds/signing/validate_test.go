@@ -8,22 +8,7 @@ import (
 )
 
 func TestValidateSignature(t *testing.T) {
-	/*
-		$ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1
-		-----BEGIN PRIVATE KEY-----
-		MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfKZeloQdBRCpEzVh
-		WJRkCLXVlGpHKyLoipBqDP3ZVYyhRANCAARL+0q63ixJP3Fl4wkIz8jbmVDmMg5k
-		3YWFwVro9qg/rtVr1yTaNI+rZHjHDIwoRcsEtJJIttUluVqRGtsn2wNO
-		-----END PRIVATE KEY-----
-
-		$ openssl ec -pubout
-	*/
-	pubKey, err := signing.ParsePublicKey(`
------BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAES/tKut4sST9xZeMJCM/I25lQ5jIO
-ZN2FhcFa6PaoP67Va9ck2jSPq2R4xwyMKEXLBLSSSLbVJblakRrbJ9sDTg==
------END PUBLIC KEY-----
-`)
+	pubKey, err := signing.ParsePublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("signing.ParsePublicKey failed and should not have! %s", err)
 	}
@@ -39,7 +24,7 @@ ZN2FhcFa6PaoP67Va9ck2jSPq2R4xwyMKEXLBLSSSLbVJblakRrbJ9sDTg==
 	}{
 		{
 			name: "valid",
-			// xxd <<<'f847d5d104fd0bdd4d8db27aa882ba0dec9415c54f4b5af7dab6c89e7b180017' -revert -plain | openssl pkeyutl -sign -inkey <(cat <<<$'-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfKZeloQdBRCpEzVh\nWJRkCLXVlGpHKyLoipBqDP3ZVYyhRANCAARL+0q63ixJP3Fl4wkIz8jbmVDmMg5k\n3YWFwVro9qg/rtVr1yTaNI+rZHjHDIwoRcsEtJJIttUluVqRGtsn2wNO\n-----END PRIVATE KEY-----') -pkeyopt digest:sha256 | base64 -w0; echo
+			// xxd <<<'f847d5d104fd0bdd4d8db27aa882ba0dec9415c54f4b5af7dab6c89e7b180017' -revert -plain | openssl pkeyutl -sign -inkey testdata/test.key -pkeyopt digest:sha256 | base64 -w0; echo
 			base64: "MEYCIQDBopxkkKfobWNsCe30WETk4qqhbmk72QD8uXjGt4pN9wIhAIB86Y/uCsjGYOD5QUOx9PGaoiGzdxg3VIa8FDaW5aL8",
 			valid:  true,
 		},
