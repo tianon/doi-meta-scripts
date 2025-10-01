@@ -208,6 +208,10 @@ func resolveArchIndex(ctx context.Context, img string, arch string, diskCacheFor
 		return index, nil
 	}
 
+	// if we have more than one *actual* image match for any given architecture (not just attestations), we should be throwing an error because that's an assumption that a lot of code underneath this is built on
+	// this would mean something like index/manifest list with multiple os.version values for Windows - we avoid this in DOI today, but we don't have any automated *checks* for it, and this makes that state less precarious
+	actualImageManifests := 0
+
 	i := 0 // https://go.dev/wiki/SliceTricks#filter-in-place (used to delete references that don't belong to the selected architecture)
 	for _, m := range index.Manifests {
 		if m.Annotations[registry.AnnotationBashbrewArch] != arch {
@@ -215,6 +219,9 @@ func resolveArchIndex(ctx context.Context, img string, arch string, diskCacheFor
 		}
 		index.Manifests[i] = m
 		i++
+		if m.ArtifactType == "" && m.Annotations[registry.AnnotationBuildkitReferenceType] == "" {
+			actualImageManifests++
+		}
 	}
 	index.Manifests = index.Manifests[:i] // https://go.dev/wiki/SliceTricks#filter-in-place
 
@@ -222,7 +229,9 @@ func resolveArchIndex(ctx context.Context, img string, arch string, diskCacheFor
 		return nil, nil
 	}
 
-	// TODO if we have more than one *actual* image match for arch (not just an attestation), this should error!! (would mean something like index/manifest list with multiple os.version values for Windows - we avoid this in DOI today, but we don't have any automated *checks* for it, so the current state is a little precarious)
+	if actualImageManifests != 1 {
+		return nil, fmt.Errorf("image %q has an unexpected number of actual image manifests for architecture %q: %d\n%+v", img, arch, actualImageManifests, index.Manifests)
+	}
 
 	return index, nil
 }
