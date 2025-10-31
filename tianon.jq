@@ -57,9 +57,12 @@ def build_arch_sign_public_keys:
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sign:
-	_in_integration_tests
-	or (
+	if _in_integration_tests then
+		input_filename
+		| contains("/oci-import/")
+		| not
+	else
 		build_arch_sign_public_keys
 		| length > 0
-	)
+	end
 ;
