@@ -49,8 +49,9 @@ def build_arch_sign_public_keys:
 				dD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==
 				-----END PUBLIC KEY-----
 			",
-			"unsigned": "", # don't immediately rebuild everything
-		}
+		} + if any(.source.arches[].tags[]; startswith("tianon/network-toolbox:")) then {} else
+			{ "unsigned": "" } # don't immediately rebuild everything
+		end
 	end
 ;
 
