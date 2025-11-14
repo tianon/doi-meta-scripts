@@ -39,8 +39,8 @@ def build_arch_sign_public_keys:
 		end
 	elif
 		# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
-		.source.entries[0].Builder != "classic"
-		and (.build.arch | startswith("windows-") | not)
+		(.build.arch | startswith("windows-"))
+		or .source.entries[0].Builder == "classic"
 	then {} else
 		{
 			"YubiKey 4239413 Slot 82": "
