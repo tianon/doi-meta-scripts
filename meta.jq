@@ -156,6 +156,7 @@ def build_command:
 						[
 							"type=oci",
 							"dest=temp.tar",
+							"oci-artifact=true",
 							empty
 						]
 						| @csv
