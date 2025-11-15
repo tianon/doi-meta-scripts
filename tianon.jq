@@ -49,7 +49,13 @@ def build_arch_sign_public_keys:
 				dD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==
 				-----END PUBLIC KEY-----
 			",
-		} + if any(.source.arches[].tags[]; startswith("tianon/network-toolbox:")) then {} else
+		} + if any(.source.arches[].tags[];
+			# TODO remove all this following the Debian rebuild on 2025-11-17 👀
+			startswith("tianon/network-toolbox:"),
+			startswith("tianon/microsoft-edge:"),
+			startswith("tianon/firefox:"),
+			empty
+		) then {} else
 			{ "unsigned": "" } # don't immediately rebuild everything
 		end
 	end
