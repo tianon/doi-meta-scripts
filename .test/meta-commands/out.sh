@@ -6,7 +6,7 @@
 docker buildx build --progress=plain \
 	--provenance=mode=max,builder-id='https://tianon.xyz' \
 	--sbom=generator="$BASHBREW_BUILDKIT_SBOM_GENERATOR" \
-	--output '"type=oci","dest=temp.tar"' \
+	--output '"type=oci","dest=temp.tar","oci-artifact=true"' \
 	--annotation 'manifest,manifest-descriptor:org.opencontainers.image.source=https://github.com/docker-library/docker.git#6d541d27b5dd12639e5a33a675ebca04d3837d74:24/cli' \
 	--annotation 'manifest,manifest-descriptor:org.opencontainers.image.revision=6d541d27b5dd12639e5a33a675ebca04d3837d74' \
 	--annotation 'manifest,manifest-descriptor:org.opencontainers.image.created=1970-01-01T00:00:00Z' \
