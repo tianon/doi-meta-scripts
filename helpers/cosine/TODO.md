@@ -24,8 +24,9 @@
 - ~~file issue(s) with Kyverno with Tianon's v1alpha1 policy writing product feedback (see `helpers/cosine/kyverno-policy.yml`)~~
   - https://github.com/kyverno/kyverno/discussions/14036
 
-
 - re-evaluate fields included in the payloads created in `helpers/sign-image.sh` (especially those under `optional:`)
+
+- re-evaluate how we store the signing data in the Git repo, as `builds.json` is already getting huge *and* we might get forced to sign in different (worse) ways in the future
 
 # Nice To Haves
 
