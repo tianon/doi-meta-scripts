@@ -96,7 +96,7 @@ jq <<<"$imageDescriptor" --tab '
 			identity: { "docker-reference": (env.indexRefName // "") },
 		},
 		optional: {
-			creator: "https://github.com/docker-library/meta-scripts", # TODO is this a good value?
+			creator: "https://github.com/docker-library/meta-scripts", # TODO is this a good value?  no, for Tianon builds it needs to be different, and it is probably a good idea to embed the full commit, so maybe this is only a reasonable default and it needs to be set explicitly in the pipelines?
 			timestamp: (now | floor), # TODO SOURCE_DATE_EPOCH? 🤔  probably not? leave this out completely?
 			descriptor: ., # full descriptor because just the digest leaves too much to interpretation
 		},

@@ -28,6 +28,8 @@
 
 - re-evaluate how we store the signing data in the Git repo, as `builds.json` is already getting huge *and* we might get forced to sign in different (worse) ways in the future
 
+- choose a better `creator` value (see TODO in `helpers/sign-image.sh`)
+
 # Nice To Haves
 
 - ability to control what specific objects to sign via `system-config.jq` instead of embedding that directly in the Go (see TODOs in `cmd/builds`)
