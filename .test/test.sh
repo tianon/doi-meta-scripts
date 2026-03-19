@@ -16,9 +16,15 @@ export BASHBREW_ARCH_NAMESPACES='
 '
 export BASHBREW_STAGING_TEMPLATE='oisupport/staging-ARCH:BUILD'
 
+# some bits of code need to detect that we're running tests, so we'll set a sentinel value to let them do so reliably
+export BASHBREW_META_SCRIPTS_RUNNING_TESTS='vigorously'
+# (with a value that's basically never going to be set accidentally, but is still easy/small to test for)
+
 dir="$(dirname "$BASH_SOURCE")"
 dir="$(readlink -ve "$dir")"
 export BASHBREW_LIBRARY="$dir/library"
+BASHBREW_META_SCRIPTS="$(dirname "$dir")"
+export BASHBREW_META_SCRIPTS
 
 doDeploy=
 if [ "${1:-}" = '--deploy' ]; then
@@ -32,15 +38,15 @@ set -- docker:cli docker:dind docker:windowsservercore notary busybox:{latest,gl
 time bashbrew fetch "$@"
 
 # generate sources, but remove the first item so we can test cache with some missing
-time "$dir/../sources.sh" "$@" | jq --tab 'del(first(.[]))' > "$dir/sources-cache.json"
+time "$BASHBREW_META_SCRIPTS/sources.sh" "$@" | jq --tab 'del(first(.[]))' > "$dir/sources-cache.json"
 # again but with cache
-time "$dir/../sources.sh" --cache-file "$dir/sources-cache.json" "$@" > "$dir/sources-doi.json"
+time "$BASHBREW_META_SCRIPTS/sources.sh" --cache-file "$dir/sources-cache.json" "$@" > "$dir/sources-doi.json"
 
 # also fetch/include Tianon's more cursed "infosiftr/moby" example (a valid manifest with arch-specific non-archTags that end up mapping to the same sourceId)
 bashbrew fetch infosiftr-moby
-( BASHBREW_ARCH_NAMESPACES= "$dir/../sources.sh" infosiftr-moby > "$dir/sources-cache.json" )
+( BASHBREW_ARCH_NAMESPACES= "$BASHBREW_META_SCRIPTS/sources.sh" infosiftr-moby > "$dir/sources-cache.json" )
 # again but with cache
-( BASHBREW_ARCH_NAMESPACES= "$dir/../sources.sh" --cache-file="$dir/sources-cache.json" infosiftr-moby > "$dir/sources-moby.json" )
+( BASHBREW_ARCH_NAMESPACES= "$BASHBREW_META_SCRIPTS/sources.sh" --cache-file="$dir/sources-cache.json" infosiftr-moby > "$dir/sources-moby.json" )
 # technically, this *also* needs BASHBREW_STAGING_TEMPLATE='tianon/zz-staging:ARCH-BUILD', but that's a "builds.sh" flag and separating that would complicate including this even more, so Tianon has run the following one-liner to "inject" those builds as if they lived in 'oisupport/staging-ARCH:BUILD' instead:
 #   jq --raw-output '[ .[] | select(any(.source.arches[].tags[]; startswith("infosiftr-moby:"))) | "tianon/zz-staging:\(.build.arch)-\(.buildId)" as $tianon | @sh "../bin/lookup \($tianon) | jq --arg img \(.build.img) \("{ indexes: { ($img): . } }")" ] | "{ " + join(" && ") + @sh " && cat cache-builds.json; } | jq --slurp --tab \("reduce .[] as $i ({ indexes: { } }; .indexes += $i.indexes)") > cache-builds.json.new && mv cache-builds.json.new cache-builds.json"' builds.json | bash -Eeuo pipefail -x
 # (and then re-run the tests to canonicalize the file ordering)
@@ -70,14 +76,24 @@ rm -rf "$coverage/GOCOVERDIR" "$coverage/bin"
 mkdir -p "$coverage/GOCOVERDIR" "$coverage/bin"
 export GOCOVERDIR="${GOCOVERDIR:-"$coverage/GOCOVERDIR"}"
 
+# explicitly invalidate the "signatures" cache (which will be regenerated and then used in the second run, giving us better test coverage)
+jq --tab '.signatures[] |= "dGlhbm9uIGlzIHdyaXRpbmcgdGVzdHMsIGFuZCBoZSBoYXRlcyB0aGF0LCBidXQgaXQgbXVzdCBuZWVkcyBiZSBkb25lIEZPUiBUSEUgQ09WRVJBR0Ug8J+YrfCfkpYK"' "$dir/cache-builds.json" > "$dir/cache-builds.json.new"
+mv -f "$dir/cache-builds.json.new" "$dir/cache-builds.json"
+
+# load up the "production" (integration tests) signing key so we can hit those codepaths too
+# (without this, the code can't/won't even catch the invalid signature above 😅😂)
+BASHBREW_META_SIGN_PROD_PUBLIC_KEY="$(< "$BASHBREW_META_SCRIPTS/cmd/builds/signing/testdata/test.pub")"
+export BASHBREW_META_SIGN_PROD_PUBLIC_KEY
+
 time "$coverage/builds.sh" --cache "$dir/cache-builds.json" "$dir/sources.json" > "$dir/builds.json"
 [ -s "$coverage/bin/builds" ] # just to make sure it actually did build/use an appropriate binary 🙈
 
 # test again, but with "--cache=..." instead of "--cache ..." (which also lets us delete the cache and get slightly better coverage reports at the expense of speed / Hub requests)
+unset BASHBREW_META_SIGN_PROD_PUBLIC_KEY # also without the public key, so we hit the cache-only codepaths too 👀
 time "$coverage/builds.sh" --cache="$dir/cache-builds.json" "$dir/sources.json" > "$dir/builds.json"
 
 # test "lookup" code for more edge cases
-"$dir/../.go-env.sh" go build -coverpkg=./... -trimpath -o "$coverage/bin/lookup" ./cmd/lookup
+"$BASHBREW_META_SCRIPTS/.go-env.sh" go build -coverpkg=./... -trimpath -o "$coverage/bin/lookup" ./cmd/lookup
 lookup=(
 	# force a config blob lookup for platform object creation (and top-level Docker media type!)
 	'tianon/test@sha256:2f19ce27632e6baf4ebb1b582960d68948e52902c8cfac10133da0058f1dab23'
@@ -135,7 +151,7 @@ lookup=(
 if [ -n "$doDeploy" ]; then
 	# also test "deploy" (optional, disabled by default, because it's a much heavier test)
 
-	"$dir/../.go-env.sh" go build -coverpkg=./... -trimpath -o "$coverage/bin/deploy" ./cmd/deploy
+	"$BASHBREW_META_SCRIPTS/.go-env.sh" go build -coverpkg=./... -trimpath -o "$coverage/bin/deploy" ./cmd/deploy
 
 	docker rm -vf meta-scripts-test-registry &> /dev/null || :
 	trap 'docker rm -vf meta-scripts-test-registry &> /dev/null || :' EXIT
@@ -270,12 +286,12 @@ if [ -n "$doDeploy" ]; then
 fi
 
 # Go tests
-"$dir/../.go-env.sh" go test -coverpkg=./... ./... -args -test.gocoverdir="$GOCOVERDIR"
+"$BASHBREW_META_SCRIPTS/.go-env.sh" go test -coverpkg=./... ./... -args -test.gocoverdir="$GOCOVERDIR"
 
 # combine the coverage data into the "legacy" coverage format (understood by "go tool cover") and pre-generate HTML for easier digestion of the data
-"$dir/../.go-env.sh" go tool covdata textfmt -i "$GOCOVERDIR" -o "$coverage/coverage.txt"
-"$dir/../.go-env.sh" go tool cover -html "$coverage/coverage.txt" -o "$coverage/coverage.html"
-"$dir/../.go-env.sh" go tool cover -func "$coverage/coverage.txt"
+"$BASHBREW_META_SCRIPTS/.go-env.sh" go tool covdata textfmt -i "$GOCOVERDIR" -o "$coverage/coverage.txt"
+"$BASHBREW_META_SCRIPTS/.go-env.sh" go tool cover -html "$coverage/coverage.txt" -o "$coverage/coverage.html"
+"$BASHBREW_META_SCRIPTS/.go-env.sh" go tool cover -func "$coverage/coverage.txt"
 
 # also run our "jq" tests (like generating example commands from the "builds.json" we just generated)
 "$dir/jq.sh"

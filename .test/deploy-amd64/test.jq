@@ -1,6 +1,7 @@
 include "deploy";
 
 # just amd64 arch-specific manifests
-arch_tagged_manifests("amd64")
+arch_filter_builds("amd64")
+| arch_tagged_manifests
 # ... converted into a list of canonical inputs for "cmd/deploy"
-| deploy_objects
+| [ tagged_deploy_objects ]

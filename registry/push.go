@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -96,27 +97,31 @@ func EnsureManifest(ctx context.Context, ref Reference, manifest json.RawMessage
 
 			for _, child := range manifestChildren.Manifests {
 				childRef, childTargetRef := childToRefs(child)
-				r, err := Lookup(ctx, childRef, nil)
-				if err != nil {
-					return desc, fmt.Errorf("%s: manifest lookup failed: %w", childRef, err)
-				}
-				if r == nil {
-					return desc, fmt.Errorf("%s: manifest not found", childRef)
-				}
-				//defer r.Close()
-				// TODO validate r.Descriptor ?
-				// TODO use readHelperRaw here (maybe a new "readHelperAll" wrapper too?)
-				b, err := io.ReadAll(r)
-				if err != nil {
-					r.Close()
-					return desc, fmt.Errorf("%s: ReadAll of GetManifest failed: %w", childRef, err)
-				}
-				if err := r.Close(); err != nil {
-					return desc, fmt.Errorf("%s: Close of GetManifest failed: %w", childRef, err)
+				if !isDescriptorDataValid(child) {
+					r, err := Lookup(ctx, childRef, nil)
+					if err != nil {
+						return desc, fmt.Errorf("%s: manifest lookup failed: %w", childRef, err)
+					}
+					if r == nil {
+						return desc, fmt.Errorf("%s: manifest not found", childRef)
+					}
+					//defer r.Close()
+					// TODO validate r.Descriptor ?
+					child.Data, err = io.ReadAll(r)
+					if err != nil {
+						r.Close()
+						return desc, fmt.Errorf("%s: ReadAll of GetManifest failed: %w", childRef, err)
+					}
+					if err := r.Close(); err != nil {
+						return desc, fmt.Errorf("%s: Close of GetManifest failed: %w", childRef, err)
+					}
+					if !isDescriptorDataValid(child) {
+						return desc, fmt.Errorf("%s: data in registry does not match descriptor in %s", childRef, ref)
+					}
 				}
 				grandchildRefs := maps.Clone(childRefs)
 				grandchildRefs[""] = childRef // make the child's ref explicitly the "fallback" ref for any of its children
-				if _, err := EnsureManifest(ctx, childTargetRef, b, child.MediaType, grandchildRefs); err != nil {
+				if _, err := EnsureManifest(ctx, childTargetRef, child.Data, child.MediaType, grandchildRefs); err != nil {
 					return desc, fmt.Errorf("%s: EnsureManifest failed: %w", ref, err)
 				}
 				// TODO validate descriptor from EnsureManifest? (at the very least, Digest and Size)
@@ -129,11 +134,20 @@ func EnsureManifest(ctx context.Context, ref Reference, manifest json.RawMessage
 			childBlobs = append(childBlobs, manifestChildren.Layers...)
 			for _, child := range childBlobs {
 				childRef, childTargetRef := childToRefs(child)
-				// TODO if blob sets URLs, don't bother (foreign layer) -- maybe check for those MediaTypes explicitly? (not a high priority as they're no longer used and officially discouraged/deprecated; would only matter if Tianon wants to use this for "hell/win" too 👀)
-				if _, err := CopyBlob(ctx, childRef, childTargetRef); err != nil {
-					return desc, fmt.Errorf("%s: CopyBlob(%s) failed: %w", childTargetRef, childRef, err)
+				if isDescriptorDataValid(child) {
+					if _, err := EnsureBlob(ctx, childTargetRef, child.Size, bytes.NewReader(child.Data)); err != nil {
+						return desc, fmt.Errorf("%s: EnsureBlob(data field) failed: %w", childTargetRef, err)
+					}
+				} else {
+					// TODO if blob sets URLs, don't bother (foreign layer) -- maybe check for those MediaTypes explicitly? (not a high priority as they're no longer used and officially discouraged/deprecated; would only matter if Tianon wants to use this for "hell/win" too 👀)
+					if childRef == childTargetRef {
+						return desc, fmt.Errorf("%s: need to copy blob, but don't know where to copy it from (missing lookup and/or data field)", childRef)
+					}
+					if _, err := CopyBlob(ctx, childRef, childTargetRef); err != nil {
+						return desc, fmt.Errorf("%s: CopyBlob(%s) failed: %w", childTargetRef, childRef, err)
+					}
 				}
-				// TODO validate CopyBlob returned descriptor? (at the very least, Digest and Size)
+				// TODO validate EnsureBlob/CopyBlob returned descriptor? (at the very least, Digest and Size)
 			}
 
 			rDesc, err = pushManifest()

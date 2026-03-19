@@ -97,18 +97,31 @@ node(nodeExpression) { ansiColor('xterm') {
 	dir('meta') {
 		def obj = ''
 		stage('JSON') {
-			obj = sh(returnStdout: true, script: '''
+			obj = sh(returnStdout: true, script: '''#!/usr/bin/env bash
+				set -Eeuo pipefail -x
+
 				[ -n "$BUILD_ID" ]
-				shell="$(
-					jq -L"$BASHBREW_META_SCRIPTS" --raw-output '
-						include "meta";
+
+				json="$(jq -L"$BASHBREW_META_SCRIPTS" --compact-output '
+					include "meta";
+					include "system-config";
+					if has(env.BUILD_ID) then
 						.[env.BUILD_ID]
-						| select(needs_build and .build.arch == env.BASHBREW_ARCH) # sanity check
-						| .commands = commands
-						| @sh "if ! crane digest \\(.build.img) >&2; then printf %s \\(tojson); exit 0; fi"
-					' builds.json
-				)"
-				eval "$shell"
+					else
+						error("build \\(env.BUILD_ID) does not exist!")
+					end
+					| .commands = commands
+					| .doSign = build_should_sign
+				' builds.json)"
+
+				preflight="$(jq <<<"$json" --raw-output '.commands.preflight')"
+				preflight="$(eval "$preflight")"
+				if [ "$preflight" = 'skip' ]; then
+					# no output 👀 (see below)
+					exit 0
+				fi
+
+				cat <<<"$json"
 			''').trim()
 		}
 		if (obj) {
@@ -146,12 +159,34 @@ node(nodeExpression) { ansiColor('xterm') {
 						"""
 					}
 
-					stage('Build') {
-						sh """#!/usr/bin/env bash
-							set -Eeuo pipefail -x
+					def signingCredentials = []
+					if (obj.doSign) {
+						if (env.YUBECDSA_SLOT) {
+							// if a given node has a yubikey it should use for signing, it should have a "YUBECDSA_SLOT" environment variable set in the Jenkins Node configuration to signal that (and then a corresponding "signing-yubi-NODE_NAME" Jenkins credential should exist in an appropriate scope with the serial number as the username and the PIN as the password)
+							signingCredentials += [
+								usernamePassword(
+									credentialsId: 'signing-yubi-' + env.NODE_NAME,
+									usernameVariable: 'YUBECDSA_CARD',
+									passwordVariable: 'YUBECDSA_PIN',
+								)
+							]
+						} else {
+							signingCredentials += [
+								string(
+									credentialsId: 'signing-aws-kms-' + env.BASHBREW_ARCH,
+									variable: 'BASHBREW_META_SIGN_AWS_KMS_KEY',
+								)
+							]
+						}
+					}
+					withCredentials(signingCredentials) {
+						stage('Build') {
+							sh """#!/usr/bin/env bash
+								set -Eeuo pipefail -x
 
-							${ obj.commands.build }
-						"""
+								${ obj.commands.build }
+							"""
+						}
 					}
 
 					// make sure "docker login" is localized to this workspace

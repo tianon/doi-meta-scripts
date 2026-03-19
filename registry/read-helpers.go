@@ -20,7 +20,7 @@ func readJSONHelper(r ociregistry.BlobReader, v interface{}) error {
 		return err
 	}
 
-	// TODO if desc.Data != nil and len() == desc.Size, we should probably check/use that? 👀
+	// if desc.Data != nil, this would be the appropriate place to validate/use it, but we already have a reader that's providing the data in a stream so the heavy parts of creating that reader are already done and we don't save much (anything?) by throwing that away and using the data field instead (unless the object is so big that draining the reader is actually expensive or time consuming, but those are exactly the types of objects for which the data field *won't* be embedded 😂)
 
 	// make sure we can't possibly read (much) more than we're supposed to
 	limited := &io.LimitedReader{
@@ -34,12 +34,15 @@ func readJSONHelper(r ociregistry.BlobReader, v interface{}) error {
 
 	// decode directly! (mostly avoids double memory hit for big objects)
 	// (TODO protect against malicious objects somehow?)
-	if err := json.NewDecoder(tee).Decode(v); err != nil {
+	decoder := json.NewDecoder(tee)
+	if err := decoder.Decode(v); err != nil {
 		return err
 	}
+	// (json.Decoder uses a buffer to make reads more efficient but it means if we want to read the leftovers ourselves we have to join their buffer back in front of our reader)
+	leftovers := io.MultiReader(decoder.Buffered(), tee)
 
 	// read anything leftover ...
-	bs, err := io.ReadAll(tee)
+	bs, err := io.ReadAll(leftovers)
 	if err != nil {
 		return err
 	}
@@ -48,6 +51,10 @@ func readJSONHelper(r ociregistry.BlobReader, v interface{}) error {
 		if !unicode.IsSpace(rune(b)) {
 			return fmt.Errorf("unexpected non-whitespace at the end of %q: %+v\n", string(desc.Digest), rune(b))
 		}
+	}
+	// ... and if we're reading into a "json.RawMessage", we clearly wanted the raw object verbatim, so let's throw that whitespace on the end of it
+	if raw, ok := v.(*json.RawMessage); ok {
+		*raw = append(*raw, bs...)
 	}
 
 	// now that we know we've read everything, we're safe to close the original reader

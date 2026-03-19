@@ -83,6 +83,7 @@ if [ -z "${GOLANG_IMAGE:-}" ]; then
 	# handle riscv64 "gracefully" (no golang image yet because no stable distro releases yet)
 	{
 		if ! docker image inspect --format '.' "$GOLANG_IMAGE" &> /dev/null && ! docker pull "$GOLANG_IMAGE"; then
+			# TODO just append -alpine here instead
 			if [ -n "${BASHBREW_ARCH:-}" ] && docker buildx inspect "bashbrew-$BASHBREW_ARCH" &> /dev/null; then
 				# a very rough hack to avoid:
 				#  ERROR: failed to solve: failed to solve with frontend dockerfile.v0: failed to read dockerfile: failed to load cache key: subdir not supported yet

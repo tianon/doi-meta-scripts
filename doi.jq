@@ -168,13 +168,78 @@ def build_should_sbom:
 	)
 ;
 
+def _in_integration_tests: env.BASHBREW_META_SCRIPTS_RUNNING_TESTS == "vigorously";
+
+# input: "build" object (with "buildId" top level key)
+# output: key-value of (architecture trust-boundary specific) public keys (in PEM format) that should be used to verify the validity of a given build (labelled with a superfluous name for our sake / to be embedded in "builds.json" so it's easier to identify which images are signed by a given key, especially during rotation periods)
+# - might (likely) have extraneous whitespace that should be trimmed/ignored for valid PEM parsing
+# - empty object or empty string means "no signature" should be considered valid
+def build_arch_sign_public_keys:
+	if _in_integration_tests then
+		if .build.arch == "amd64" and IN(.source.arches[].tags[]; "infosiftr-moby:amd64") then
+			{
+				"Tianon's arch-specific image signing key": "
+					-----BEGIN PUBLIC KEY-----
+					MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEG+1HMsDDAFXQrPkPi80/P4XmMsWJ
+					dD5BxdeI7uvLPArqhqsB38LcTLiZ2iTwiITRwyqHlbnjXdvByWJAdaUWNQ==
+					-----END PUBLIC KEY-----
+				",
+			}
+		elif .build.arch == "amd64" and IN(.source.arches[].tags[]; "notary:server") then
+			# give us a test where we know the image isn't signed (won't be signed!), but we also explicitly validate that it's not 👀
+			{ "unsigned": "" }
+		else
+			{}
+		end
+	else
+		# TODO if normalized_builder is classic, we can't currently sign those builds (but normalized_builder is defined in meta.jq so we'd have to pull that out to use it here, which is sane but ENAMING)
+		{
+			"mips64le": {
+				"unsigned": "", # don't immediately rebuild everything
+
+				"mips64le (primary) yubi 31992878 9c": "
+					-----BEGIN PUBLIC KEY-----
+					MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdAxMzxIpv1AMbzE+ycjyq4/VxQKh
+					po/toKqH2ULTNVr41ktEcyuvHxT/gNfjHLRe79XTB06UTDLYqOGvfI35vA==
+					-----END PUBLIC KEY-----
+				",
+
+				#"mips64le (backup) yubi 31992760 9c": "
+				#	-----BEGIN PUBLIC KEY-----
+				#	MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXmNFPvf/vpmOpZd0IyONAbJA0nPz
+				#	wOR7i95matoQC4OO2PkCkQ0zUV5WvsikTlZR6dILsdS+KehYbWfRO07qfw==
+				#	-----END PUBLIC KEY-----
+				#",
+			},
+
+			"riscv64": {
+				"unsigned": "", # don't immediately rebuild everything
+
+				"riscv64 (primary) yubi 31992931 9c": "
+					-----BEGIN PUBLIC KEY-----
+					MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/3vIKIZs1mhnrthNpEqC9SBmnFFJ
+					CvEj8WWPvXB1R9xX03/MmAg8QU4FD9dnFXr+zdkJ3RqLEXovxzO03KoK9Q==
+					-----END PUBLIC KEY-----
+				",
+
+				#"riscv64 (backup) yubi 31992898 9c": "
+				#	-----BEGIN PUBLIC KEY-----
+				#	MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYCVWz7ZwW5Lu8+U2OkPS1AnBOGmo
+				#	F/Desit+a0xXCMdDEew0rUE1cJcTZyeZuGRGE8H4KeT6Z1UfQ/OqDJUX3w==
+				#	-----END PUBLIC KEY-----
+				#",
+			},
+		}[.build.arch]
+		// {}
+	end
+;
+
 # input: "build" object (with "buildId" top level key)
 # output: boolean
 def build_should_sign:
-	.build.arch == "amd64" and (
-		.source.arches[.build.arch].tags
-		| map(split(":")[0])
-		| unique
-		| index("notary")
+	_in_integration_tests
+	or (
+		build_arch_sign_public_keys
+		| length > 0
 	)
 ;

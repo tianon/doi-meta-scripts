@@ -97,10 +97,14 @@ image() {
 			| .[1]
 			| validate_oci_image({
 				imageAttestation: IN($desc.annotations["vnd.docker.reference.type"]; "attestation-manifest"),
+				imageCosign: IN($desc.artifactType; "application/vnd.dev.cosign.artifact.sig.v1+json"),
 			})
 			| if $desc then
 				validate_IN(.mediaType; $desc.mediaType)
 				| validate_IN(.artifactType; $desc.artifactType)
+				| if has("subject") and ($desc.annotations | has("vnd.docker.reference.digest")) then
+					validate_IN(.subject.digest; $desc.annotations["vnd.docker.reference.digest"])
+				else . end
 			else . end
 			| (
 				(
@@ -136,6 +140,9 @@ index() {
 			| if $desc then
 				validate_IN(.mediaType; $desc.mediaType)
 				| validate_IN(.artifactType; $desc.artifactType)
+				| if has("subject") and ($desc.annotations | has("vnd.docker.reference.digest")) then
+					validate_IN(.subject.digest; $desc.annotations["vnd.docker.reference.digest"])
+				else . end
 			else . end
 			| .manifests[]
 			| (

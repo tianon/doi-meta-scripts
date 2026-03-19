@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -12,8 +13,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/docker-library/meta-scripts/cmd/builds/signing"
 	"github.com/docker-library/meta-scripts/om"
 	"github.com/docker-library/meta-scripts/registry"
+	"github.com/docker-library/meta-scripts/sm"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -40,24 +43,84 @@ type BuildIDParts struct {
 type MetaBuild struct {
 	BuildID string `json:"buildId"`
 	Build   struct {
-		Img      string         `json:"img"`
-		Resolved *ocispec.Index `json:"resolved"`
+		Img      string            `json:"img"`
+		Ignore   []registry.Digest `json:"ignore,omitempty"` // a list of digests to explicitly ignore / treat as if they don't exist (for example, if signature verification fails)
+		Resolved *ocispec.Index    `json:"resolved"`
 		BuildIDParts
 		ResolvedParents om.OrderedMap[ocispec.Index] `json:"resolvedParents"`
+
+		ProdSignatures []ocispec.Descriptor `json:"prodSignatures,omitempty"`
 	} `json:"build"`
 	Source json.RawMessage `json:"source"`
+
+	// this is used below for passing bits of data from jq into Go, and gets zero'd out before we write the final JSON 👀
+	BonusData *struct {
+		ArchSignKeys []struct {
+			Label string `json:"label"`
+			PEM   string `json:"pem"`
+		} `json:"archSignPublicKeys"`
+	} `json:"DELETE-ME,omitempty"`
 }
+
+// this gets passed to "jq" in order to generate a stream of objects to fill up the "MetaBuild" struct above from "sources.json" entries (so Go can process them further and eventually write them out to "builds.json")
+const jqQuery = `
+	include "system-config";
+	.[]
+	| (.arches | to_entries[]) as { key: $arch, value: $archMeta }
+	| .arches = { ($arch): $archMeta }
+	| {
+		build: {
+			sourceId,
+			arch: $arch,
+		},
+		source: .,
+	}
+	| .["DELETE-ME"] = {
+		archSignPublicKeys: (
+			build_arch_sign_public_keys // {}
+			| to_entries
+			| map(
+				{
+					label: .key,
+					pem: (
+						.value
+						| gsub("^[[:space:]]+|[[:space:]]+$"; "") # trim whitespace
+						| gsub("\n[[:space:]]+"; "\n") # strip extra tabs (these are in PEM format, but likely with funny indentation that'll throw off the parser)
+					),
+				}
+			)
+		),
+	}
+`
+
+var metaScripts string = func() string {
+	metaScripts := os.Getenv("BASHBREW_META_SCRIPTS")
+	if metaScripts == "" {
+		panic("BASHBREW_META_SCRIPTS is not set (or empty) and is required")
+	} else if fi, err := os.Stat(metaScripts); err != nil {
+		panic(err)
+	} else if !fi.Mode().IsDir() {
+		panic("invalid BASHBREW_META_SCRIPTS: '" + metaScripts + "' (not a directory)")
+	}
+	return metaScripts
+}()
 
 var (
 	// keys are image/tag names, values are functions that return either *ocispec.Index or error
-	cacheResolve = sync.Map{}
-	cacheFile    string
+	cacheResolve = sm.Map[string, func() (*ocispec.Index, error)]{}
+
+	// keys are digests (of "simple signing" payloads), values are (base64 string) "prod" signatures
+	// this is treated as read-only ("loadCacheFromFile" is the only function that should ever write to this variable)
+	cacheSignatures = map[registry.Digest]string{}
+	// (the writing half of this dataset is covered by "saveCacheMutex")
+
+	cacheFile string
 )
 
-func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocispec.Index, error) {
+func diskCacheNormalizeRefForCacheKey(img string) (registry.Reference, error) {
 	ref, err := registry.ParseRef(img)
 	if err != nil {
-		return nil, err
+		return ref, fmt.Errorf("failed to parse ref %q: %w", img, err)
 	}
 	if ref.Digest != "" {
 		// we use "ref" as a cache key, so if we have an explicit digest, ditch any tag data
@@ -65,13 +128,40 @@ func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocis
 	} else if ref.Tag == "" {
 		ref.Tag = "latest"
 	}
+	return ref, nil
+}
+
+func removeImageFromCache(_ context.Context, img string) error {
+	ref, err := diskCacheNormalizeRefForCacheKey(img)
+	if err != nil {
+		return err
+	}
+
+	saveCacheMutex.Lock()
+	if saveCache != nil {
+		delete(saveCache.Indexes, ref)
+	}
+	saveCacheMutex.Unlock()
+
+	return nil
+}
+
+func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocispec.Index, error) {
+	ref, err := diskCacheNormalizeRefForCacheKey(img)
+	if err != nil {
+		return nil, err
+	}
 	refString := ref.String()
 
 	cacheFunc, wasCached := cacheResolve.LoadOrStore(refString, sync.OnceValues(func() (*ocispec.Index, error) {
-		return registry.SynthesizeIndex(ctx, ref)
+		index, err := registry.SynthesizeIndex(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to synthesize index: %w", err) // we don't decorate this with "ref" because SynthesizeIndex already decorates all the errors it returns with an appropriate ref
+		}
+		return index, nil
 	}))
 
-	index, err := cacheFunc.(func() (*ocispec.Index, error))()
+	index, err := cacheFunc()
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +185,17 @@ func resolveIndex(ctx context.Context, img string, diskCacheForSure bool) (*ocis
 		saveCacheMutex.Unlock()
 	}
 
+	// janky "deep copy" to avoid ever mutating the original index (and screwing up our cache / other arch lookups of the same image)
+	// we abuse the fact that we know Index has a sane JSON encoding *and* these objects are all ~small to round-trip through JSON for a simple deep copy that's 100% all-inclusive
+	var indexCopy ocispec.Index
+	if b, err := json.Marshal(index); err != nil {
+		return nil, err
+	} else if err := json.Unmarshal(b, &indexCopy); err != nil {
+		return nil, err
+	} else {
+		index = &indexCopy
+	}
+
 	return index, nil
 }
 
@@ -107,12 +208,9 @@ func resolveArchIndex(ctx context.Context, img string, arch string, diskCacheFor
 		return index, nil
 	}
 
-	// janky little "deep copy" to avoid mutating the original index (and screwing up our cache / other arch lookups of the same image)
-	indexCopy := *index
-	indexCopy.Manifests = nil
-	indexCopy.Manifests = append(indexCopy.Manifests, index.Manifests...)
-	// TODO top-level *and* nested Annotations/URLs/Platform also? (we don't currently mutate any of those, so not critical)
-	index = &indexCopy
+	// if we have more than one *actual* image match for any given architecture (not just attestations), we should be throwing an error because that's an assumption that a lot of code underneath this is built on
+	// this would mean something like index/manifest list with multiple os.version values for Windows - we avoid this in DOI today, but we don't have any automated *checks* for it, and this makes that state less precarious
+	actualImageManifests := 0
 
 	i := 0 // https://go.dev/wiki/SliceTricks#filter-in-place (used to delete references that don't belong to the selected architecture)
 	for _, m := range index.Manifests {
@@ -121,23 +219,90 @@ func resolveArchIndex(ctx context.Context, img string, arch string, diskCacheFor
 		}
 		index.Manifests[i] = m
 		i++
+		if m.ArtifactType == "" && m.Annotations[registry.AnnotationBuildkitReferenceType] == "" {
+			actualImageManifests++
+		}
 	}
 	index.Manifests = index.Manifests[:i] // https://go.dev/wiki/SliceTricks#filter-in-place
-
-	// TODO set an annotation on the index to specify whether or not we actually filtered anything (or whether it's safe to copy the original index as-is during arch-specific deploy instead of reconstructing it from all the parts); maybe a list of digests that were skipped/excluded?
-	// see matching TODO over in registry.SynthesizeIndex (which this needs to also respect/keep/supplement, if/when we implement it here)
 
 	if len(index.Manifests) == 0 {
 		return nil, nil
 	}
 
-	// TODO if we have more than one *actual* image match for arch (not just an attestation), this should error!! (would mean something like index/manifest list with multiple os.version values for Windows - we avoid this in DOI today, but we don't have any automated *checks* for it, so the current state is a little precarious)
+	if actualImageManifests != 1 {
+		return nil, fmt.Errorf("image %q has an unexpected number of actual image manifests for architecture %q: %d\n%+v", img, arch, actualImageManifests, index.Manifests)
+	}
 
 	return index, nil
 }
 
+var (
+	prodPublicKey = sync.OnceValue(func() *ecdsa.PublicKey {
+		if publicKeyPEM := strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY")); publicKeyPEM != "" {
+			// we know what the public key is supposed to be, so let's validate the cached signature before using/trusting it
+			pubKey, err := signing.ParsePublicKey(publicKeyPEM)
+			if err != nil {
+				// panic instead of return because this is bad CI job configuration, not bad data, so it should blow up ASAP
+				panic(fmt.Sprintf("BASHBREW_META_SIGN_PROD_PUBLIC_KEY is broken/wrong?  %v\n\n%s", err, publicKeyPEM))
+			}
+			return pubKey
+		}
+		return nil
+	})
+	verifyProdPublicKeyOnce sync.Once
+)
+
+func prodSignDigest(ctx context.Context, digest registry.Digest) (string, error) {
+	var signature string
+	if cache, ok := cacheSignatures[digest]; ok {
+		if pubKey := prodPublicKey(); pubKey != nil {
+			// we know what the public key is supposed to be, so let's validate the cached signature before using/trusting it
+			if valid, err := signing.ValidateSignatureBase64(pubKey, digest, cache); err == nil && valid {
+				signature = cache
+			}
+		} else {
+			signature = cache
+		}
+	}
+
+	if signature == "" {
+		cmd := exec.CommandContext(ctx, metaScripts+"/helpers/sign-digest.sh", string(digest))
+		cmd.Stderr = os.Stderr
+		if cmdOut, err := cmd.Output(); err != nil {
+			return "", fmt.Errorf("failed to sign %q: %w", digest, err)
+		} else {
+			signature = strings.TrimSpace(string(cmdOut))
+
+			if pubKey := prodPublicKey(); pubKey != nil {
+				// if the public key env variable is set, we should validate that what we got matches it, but only the first time (as a rough sanity check that our "sign-digest" method's output matches our configured public key)
+				verifyProdPublicKeyOnce.Do(func() {
+					if valid, err := signing.ValidateSignatureBase64(pubKey, digest, signature); err != nil {
+						panic(fmt.Sprintf("error attempting to validate generated signature against BASHBREW_META_SIGN_PROD_PUBLIC_KEY: %v\n\n%s", err, strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY"))))
+					} else if !valid {
+						panic(fmt.Sprintf("the output of `sign-digest.sh` doesn't match the configured BASHBREW_META_SIGN_PROD_PUBLIC_KEY! 😬\n\ndigest: %s\nsignature: %s\npublic key:\n\n%s", digest, signature, strings.TrimSpace(os.Getenv("BASHBREW_META_SIGN_PROD_PUBLIC_KEY"))))
+					}
+				})
+			}
+		}
+	}
+
+	saveCacheMutex.Lock()
+	if saveCache != nil {
+		if saveCacheSignature, ok := saveCache.Signatures[digest]; ok {
+			// if we have *somehow* signed the same digest twice in this one process, that's both unusual and we should be consistent up-front and return that previous signature (not wait for the next round to load from the cache to make us consistent) -- yes this throws away work we've already done, but it's small and will be cached next time we run (and the likelihood of us even hitting this specific codepath is practically zero)
+			signature = saveCacheSignature
+		} else {
+			saveCache.Signatures[digest] = signature
+		}
+	}
+	saveCacheMutex.Unlock()
+
+	return signature, nil
+}
+
 type cacheFileContents struct {
-	Indexes map[registry.Reference]*ocispec.Index `json:"indexes"`
+	Indexes    map[registry.Reference]*ocispec.Index `json:"indexes"`
+	Signatures map[registry.Digest]string            `json:"signatures,omitempty"`
 }
 
 var (
@@ -152,7 +317,10 @@ func loadCacheFromFile() error {
 
 	// now that we know we have a file we want cache to go into (and come from), let's initialize the "saveCache" (which will be written when the whole process is done / we're successful, and *only* caches staging images)
 	saveCacheMutex.Lock()
-	saveCache = &cacheFileContents{Indexes: map[registry.Reference]*ocispec.Index{}}
+	saveCache = &cacheFileContents{
+		Indexes:    map[registry.Reference]*ocispec.Index{},
+		Signatures: map[registry.Digest]string{},
+	}
 	saveCacheMutex.Unlock()
 
 	f, err := os.Open(cacheFile)
@@ -174,7 +342,7 @@ func loadCacheFromFile() error {
 		fun, _ := cacheResolve.LoadOrStore(img.String(), sync.OnceValues(func() (*ocispec.Index, error) {
 			return index, nil
 		}))
-		index2, err := fun.(func() (*ocispec.Index, error))()
+		index2, err := fun()
 		if err != nil {
 			// this should never happen (hence panic vs return) 🙈
 			panic(err)
@@ -182,6 +350,10 @@ func loadCacheFromFile() error {
 		if index2 != index {
 			panic("index2 != index??? " + img.String())
 		}
+	}
+
+	if cache.Signatures != nil {
+		cacheSignatures = cache.Signatures
 	}
 
 	return nil
@@ -243,7 +415,8 @@ func main() {
 
 	go func() {
 		// Go does not have ordered maps *and* is complicated to read an object, make a tiny modification, write it back out (without modelling the entire schema), so we'll let a single invocation of jq solve both problems (munging the documents in the way we expect *and* giving us an in-order stream)
-		jq := exec.Command("jq", "--compact-output", ".[] | (.arches | to_entries[]) as $arch | .arches = { ($arch.key): $arch.value }", sourcesJsonFile)
+		// doing this *also* lets us source our "system-config" to pull in useful values like whether and how a particular should be signed (so those can be maintained in the single source-of-truth that is our jq), and clean up a bunch of gnarly Go by writing slightly more logic in jq instead
+		jq := exec.CommandContext(ctx, "jq", "-L"+metaScripts, "--compact-output", jqQuery, sourcesJsonFile)
 		jq.Stderr = os.Stderr
 
 		stdout, err := jq.StdoutPipe()
@@ -261,25 +434,19 @@ func main() {
 		for decoder.More() {
 			var build MetaBuild
 
-			if err := decoder.Decode(&build.Source); err == io.EOF {
+			if err := decoder.Decode(&build); err == io.EOF {
 				break
 			} else if err != nil {
 				panic(err)
+			} else if build.BonusData == nil {
+				panic("missing 'bonus' data somehow??")
+				// now we can just assume build.BonusData is valid to deref until we remove it right before we write the data back out 🤌
 			}
 
+			// the "source" field gets read in as a "json.RawMessage" so that it can be written verbatim (to be absolutely sure we don't accidentally modify it or have to parse too much of it just to make sure we write *all* of it back out), so we have to explicitly parse the bits of it we care about/need
 			var source MetaSource
 			if err := json.Unmarshal(build.Source, &source); err != nil {
 				panic(err)
-			}
-
-			build.Build.SourceID = source.SourceID
-
-			if len(source.Arches) != 1 {
-				panic("unexpected arches length: " + string(build.Source))
-			}
-			for build.Build.Arch = range source.Arches {
-				// I really hate Go.
-				// (just doing a lookup of the only key in my map into a variable)
 			}
 
 			outChan := make(chan out, 1)
@@ -325,8 +492,7 @@ func main() {
 				if err != nil {
 					panic(err)
 				}
-				buildIDJSON = append(buildIDJSON, byte('\n')) // previous calculation of buildId included a newline in the JSON, so this preserves compatibility
-				// TODO if we ever have a bigger "buildId break" event (like adding major base images that force the whole tree to rebuild), we should probably ditch this newline
+				buildIDJSON = append(buildIDJSON, byte('\n')) // previous calculation of buildId included a newline in the JSON, so this preserves compatibility (it's also easier to add a newline than it is to remove it in some languages like Bash/Shell, so it's harmless and even safer to leave it in long-term)
 
 				build.BuildID = fmt.Sprintf("%x", sha256.Sum256(buildIDJSON))
 				fmt.Fprintf(os.Stderr, "%s (%s) -> %s [%s]\n", source.SourceID, source.Arches[build.Build.Arch].Tags[0], build.BuildID, build.Build.Arch)
@@ -338,6 +504,175 @@ func main() {
 					panic(err)
 				}
 
+				if build.Build.Resolved != nil {
+					// explicitly clear out the annotations we'll use to record "signed by" information (so they can't possibly leak in from anywhere and we can rely on "if they're set here, we set them after verification")
+					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByLabel)
+					delete(build.Build.Resolved.Annotations, registry.AnnotationBashbrewSignedByPEM)
+				}
+
+				// if build.BonusData.ArchSignKeys (ie, the output of "build_arch_sign_public_keys") is a completely empty object, we don't care about signatures at all and should treat every incoming image as unsigned, but if it's got *any* keys then we treat it as authoritative for the valid states of signatures on this image
+				// ie, {} + signed image == fine
+				// but, {"unsigned is fine":""} + signed image == invalid, image to be ignored
+				var signatures []registry.CosignedPayload
+				if len(build.BonusData.ArchSignKeys) > 0 {
+					// if we have any signatures on this build, we need to validate them (and throw out the image / treat it as 404 if the signature is invalid/wrong)
+					signatures, err = registry.CosignSignatures(ctx, build.Build.Resolved)
+					if err != nil {
+						// TODO most errors here probably just mean we should treat it like bad signatures, but not 100%, so we need to sort through that instead of just bailing ("panic: illegal base64 data at input byte 4" for example is clearly "badsig", but failures to fetch objects from the registry should explode instead)
+						panic(err)
+					}
+				} else if build.Build.Resolved != nil {
+					// since we're explicitly ignoring any signatures, we should remove them from the result we embed in the JSON
+					i := 0 // https://go.dev/wiki/SliceTricks#filter-in-place (used to delete references that don't belong to the selected architecture)
+					for _, m := range build.Build.Resolved.Manifests {
+						if m.ArtifactType == registry.ArtifactTypeCosignSignature {
+							continue
+						}
+						build.Build.Resolved.Manifests[i] = m
+						i++
+					}
+					build.Build.Resolved.Manifests = build.Build.Resolved.Manifests[:i] // https://go.dev/wiki/SliceTricks#filter-in-place
+				}
+
+				// if we have *any* signatures now, we need to validate that every object in Manifests that we might *want* to sign has a corresponding signature
+				missingSignatures := false
+				if len(signatures) > 0 {
+					expectedSignatureCount := 0
+				ManifestsHaveSignaturesLoop:
+					for _, manifest := range build.Build.Resolved.Manifests {
+						// TODO should this logic for whether/what to sign live in "system-config.jq" too?
+						if manifest.ArtifactType == registry.ArtifactTypeCosignSignature {
+							// we don't sign signatures 😂
+							continue ManifestsHaveSignaturesLoop
+						}
+						if manifest.Annotations[registry.AnnotationBuildkitReferenceType] == registry.AnnotationBuildkitReferenceTypeAttestation {
+							// we don't (currently) sign BuildKit's attestations
+							continue ManifestsHaveSignaturesLoop
+						}
+
+						for _, signature := range signatures {
+							if signature.ManifestDigest != manifest.Digest {
+								// signature is not a match for manifest, keep looking
+								continue
+							}
+
+							if desc := signature.Descriptor; desc != nil {
+								// if our signed payload specifies a descriptor, we should validate at least MediaType, Digest, and Size are a valid match
+								if desc.MediaType != manifest.MediaType || desc.Digest != manifest.Digest || desc.Size != manifest.Size {
+									// signature is not a match for manifest, keep looking
+									continue
+								}
+							}
+
+							expectedSignatureCount++
+
+							// we found a signature that matches this manifest, move on to checking the next manifest
+							continue ManifestsHaveSignaturesLoop
+						}
+
+						// TODO print out a warning that we have signatures, but we're missing a signature for "manifest"
+						missingSignatures = true
+						break ManifestsHaveSignaturesLoop
+					}
+
+					// we also need to validate the reverse - that we don't have any signatures for other things (and since we counted how many we *should* have based on how many things we epxect to be signed, that's a simple equality check)
+					if !missingSignatures && len(signatures) != expectedSignatureCount {
+						panic(fmt.Sprintf("too *many* signatures?? have %d vs %d expected", len(signatures), expectedSignatureCount))
+					}
+				}
+
+				// if we have no signatures and no keys to validate against, we're "valid" already (otherwise we have to dig deeper to know)
+				validSignatureState := !missingSignatures && len(signatures) == 0 && len(build.BonusData.ArchSignKeys) == 0
+
+				// TODO move more of this code into a library or function so we can write a boatload of tests over it
+				if !missingSignatures {
+					// loop over every public key we have configured to see if it's signed all our signatures
+				ArchSignKeysLoop:
+					for _, key := range build.BonusData.ArchSignKeys {
+						if key.PEM == "" {
+							// empty string in configuration means "unsigned is fine!"
+							if len(signatures) == 0 {
+								// we have no signatures, all is well
+								validSignatureState = true
+								break ArchSignKeysLoop
+							} else {
+								// we have signatures that need to be verified, keep looking
+								continue ArchSignKeysLoop
+							}
+						}
+						if len(signatures) == 0 {
+							// we don't have any signatures, so this key can't possibly be "the one" that created them 😶
+							continue ArchSignKeysLoop
+							// (but we continue instead of break because a later key might be the explicitly empty "unsigned is fine" case above)
+						}
+
+						pubKey, err := signing.ParsePublicKey(key.PEM)
+						if err != nil {
+							panic(err)
+						}
+
+						for _, signature := range signatures {
+							if valid, err := signing.ValidateSignature(pubKey, signature.Digest, signature.Signature); err != nil {
+								// TODO this should probably just be treated like a "bad" signature (and thus cause the image to be considered invalid)
+								panic(err)
+							} else if !valid {
+								// this key's not the one! (TODO should we print a debug log here?)
+								continue ArchSignKeysLoop
+							}
+
+							// we're only valid if *all* signatures are valid (and signed by the same key), so we have to keep looping
+						}
+
+						// "we did it, fam" - record which key successfully validated every signature we have (and we verified above that we have signatures for everything we expect to)
+						build.Build.Resolved.Annotations[registry.AnnotationBashbrewSignedByLabel] = key.Label
+						build.Build.Resolved.Annotations[registry.AnnotationBashbrewSignedByPEM] = key.PEM
+
+						validSignatureState = true
+						break ArchSignKeysLoop
+					}
+				}
+
+				if !validSignatureState {
+					// if we have signatures but they aren't valid (or aren't complete), this build is completely dead to us
+					if build.Build.Resolved != nil {
+						// TODO consider embedding in build.Build.Resolved an easier lookup for the original digest?  even if only for in-code not written in the JSON 🤔  (reparsing a string WE CREATED as a ref feels ... wrong)
+						ref, err := registry.ParseRef(build.Build.Resolved.Annotations[ocispec.AnnotationRefName])
+						if err != nil {
+							panic(err) // TODO what
+						}
+						if ref.Digest == "" {
+							panic("ref " + ref.String() + " does not have a digest and should??")
+						}
+						// we have to record the digest of any image we *did* find as "invalid" so that the "build" code can know to ignore it too (when it does a pre-flight "does this build already exist?" check)
+						build.Build.Ignore = append(build.Build.Ignore, ref.Digest)
+					}
+					build.Build.Resolved = nil
+					// we also need to clear the "lookup" cache as if this one never was looked up or we'll just ignore this image forever in a tight loop
+					if err := removeImageFromCache(ctx, build.Build.Img); err != nil {
+						panic(err)
+					}
+				} else {
+					// this is the appropriate place to generate some fresh new "production key" signatures for the "Raw" payloads we just verified
+					// for "deploy" to create these "signatures" from nothing, we just have to sign the payload digest and note where to find the payload, since it needs to push the payload directly to a :sha256-xxx.sig, so we only need to record each "signed payload" digest, which manifest digest it's a signature for (which we use to pull a full descriptor from "resolved"), and the signature, and deploy can synthesize a full manifest to wrap it ✨
+					for _, signaturePayload := range signatures {
+						prodSignature, err := prodSignDigest(ctx, signaturePayload.Digest)
+						if err != nil {
+							panic(fmt.Sprintf("prod signing of %q failed: %v", build.Build.Img, err))
+						}
+						build.Build.ProdSignatures = append(build.Build.ProdSignatures, ocispec.Descriptor{
+							MediaType: registry.MediaTypeCosignSimpleSigning,
+							Digest:    signaturePayload.Digest,
+							Size:      int64(len(signaturePayload.Raw)),
+							Annotations: map[string]string{
+								registry.AnnotationCosignSignature:         prodSignature,
+								registry.AnnotationBuildkitReferenceDigest: string(signaturePayload.ManifestDigest),
+							},
+							// TODO Data: signaturePayload.Raw, ? we can copy this object from the ".build.img" repo so we don't need it here too unless we actually want/need to sign something different here than we did during build, and it's non-trivial in size when we have thousands of them, but it would *also* mean we could embed the data fields in the signature manifests themselves which could help cut down on lookups for consumers
+						})
+					}
+				}
+
+				build.BonusData = nil
 				json, err := json.Marshal(&build)
 				if err != nil {
 					panic(err)

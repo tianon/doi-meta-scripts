@@ -9,6 +9,7 @@ import (
 
 	"cuelabs.dev/go/oci/ociregistry"
 	"cuelabs.dev/go/oci/ociregistry/ociref"
+	"github.com/opencontainers/go-digest"
 )
 
 // parse a string ref like `hello-world:latest` directly into a [Reference] object, with Docker Hub canonicalization applied: `docker.io/library/hello-world:latest`
@@ -26,6 +27,9 @@ func ParseRef(img string) (Reference, error) {
 
 // copy ociref.Reference so we can add methods (especially for JSON round-trip, but also Docker-isms like the implied default [Reference.Host] and `library/` prefix for DOI)
 type Reference ociref.Reference
+
+// alias go-digest.Digest, for convenience (see also ociref.Digest, but we can't alias an alias, so we do a little copying)
+type Digest = digest.Digest
 
 // normalize Docker Hub refs like `hello-world:latest`: `docker.io/library/hello-world:latest`
 //
